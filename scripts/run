@@ -4,11 +4,34 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-API_HOST=127.0.0.1
-API_PORT=8000
+
+# Read one BSD_ setting from the repo-root .env, matching backend/app/config.py.
+# Last assignment wins (as dotenv does); surrounding quotes are stripped.
+read_env_file_var() {
+  local name="$1"
+  local file="${ROOT}/.env"
+  [[ -f "${file}" ]] || return 0
+  sed -n "s/^[[:space:]]*${name}[[:space:]]*=[[:space:]]*//p" "${file}" \
+    | tail -n 1 \
+    | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/" -e 's/[[:space:]]*$//'
+}
+
+# Precedence matches the docs: environment, then .env, then the default.
+API_HOST="${BSD_HOST:-$(read_env_file_var BSD_HOST)}"
+API_HOST="${API_HOST:-127.0.0.1}"
+API_PORT="${BSD_PORT:-$(read_env_file_var BSD_PORT)}"
+API_PORT="${API_PORT:-8000}"
 UI_HOST=127.0.0.1
 UI_PORT=8765
-HEALTH_URL="http://${API_HOST}:${API_PORT}/api/v1/healthz"
+
+# A wildcard bind is not connectable; probe and proxy over loopback instead.
+HEALTH_HOST="${API_HOST}"
+case "${API_HOST}" in
+  0.0.0.0 | :: | localhost) HEALTH_HOST=127.0.0.1 ;;
+esac
+HEALTH_URL="http://${HEALTH_HOST}:${API_PORT}/api/v1/healthz"
+# Vite reads this to point its /api proxy at the same port as the API.
+export BSD_PORT="${API_PORT}"
 API_PID=""
 UI_PID=""
 # Set BSD_FORCE_FREE_PORTS=1 to kill listeners on :8000/:8765 (default: fail if busy).
