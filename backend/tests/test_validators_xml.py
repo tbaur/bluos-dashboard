@@ -81,6 +81,40 @@ def test_safe_parse_xml_rejects_too_many_elements() -> None:
     assert safe_parse_xml(b"<a>" + kids + b"</a>", settings) is None
 
 
+def test_safe_parse_xml_rejects_entity_expansion() -> None:
+    """Billion laughs must not expand. Needs libexpat >= 2.4.0 (see bluos/xml.py)."""
+    bomb = (
+        b'<?xml version="1.0"?><!DOCTYPE lolz [\n'
+        b'<!ENTITY lol "lol">\n'
+        b'<!ENTITY lol1 "' + b"&lol;" * 10 + b'">\n'
+        b'<!ENTITY lol2 "' + b"&lol1;" * 10 + b'">\n'
+        b'<!ENTITY lol3 "' + b"&lol2;" * 10 + b'">\n'
+        b'<!ENTITY lol4 "' + b"&lol3;" * 10 + b'">\n'
+        b'<!ENTITY lol5 "' + b"&lol4;" * 10 + b'">\n'
+        b'<!ENTITY lol6 "' + b"&lol5;" * 10 + b'">\n'
+        b'<!ENTITY lol7 "' + b"&lol6;" * 10 + b'">\n'
+        b"]><lolz>&lol7;</lolz>"
+    )
+    assert safe_parse_xml(bomb, Settings()) is None
+
+
+def test_safe_parse_xml_rejects_quadratic_blowup() -> None:
+    payload = (
+        b'<?xml version="1.0"?><!DOCTYPE b [<!ENTITY a "'
+        + b"A" * 50_000
+        + b'">]><b>'
+        + b"&a;" * 2_000
+        + b"</b>"
+    )
+    assert safe_parse_xml(payload, Settings(max_xml_size=10_485_760)) is None
+
+
+def test_safe_parse_xml_rejects_deep_nesting() -> None:
+    settings = Settings(max_xml_depth=10)
+    deep = b"<a>" * 40 + b"x" + b"</a>" * 40
+    assert safe_parse_xml(deep, settings) is None
+
+
 def test_text_and_attr_helpers() -> None:
     settings = Settings()
     root = safe_parse_xml(b'<status vol="9"><state>play</state></status>', settings)
