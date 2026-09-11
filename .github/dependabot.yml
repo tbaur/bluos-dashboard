@@ -14,8 +14,16 @@ updates:
       prefix: "chore"
       prefix-development: "chore"
     groups:
+      # @vitest/coverage-v8 pins an exact peer on the matching vitest version,
+      # so bumping either one alone can never install (npm ERESOLVE). Group them
+      # across all update types. Must stay above the catch-all: Dependabot
+      # assigns a dependency to the first group whose patterns match.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
       # Batch only low-risk patch/minor updates so they stay easy to review.
-      # Major bumps (e.g. vite, eslint, typescript, vitest) arrive as their own
+      # Major bumps (e.g. vite, eslint, typescript) arrive as their own
       # PRs and get evaluated and migrated deliberately.
       frontend:
         patterns:
