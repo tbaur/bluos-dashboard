@@ -6,7 +6,7 @@ import hmac
 import logging
 import time
 import uuid
-from urllib.parse import parse_qs
+from urllib.parse import unquote_to_bytes
 
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -67,7 +67,9 @@ class RequestContextMiddleware:
         self.app = app
         settings = get_settings()
         self._api_rate = RateLimiter(settings.api_rate_limit_seconds)
-        self._api_token = (settings.api_token or "").strip()
+        # Bytes, not str: headers arrive as bytes and hmac.compare_digest raises
+        # TypeError on str with non-ASCII characters.
+        self._api_token = (settings.api_token or "").strip().encode("utf-8")
         self._trusted_proxies = settings.trusted_proxy_set()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -154,11 +156,16 @@ def _csp_for_path(path: str) -> str:
     return _DEFAULT_CSP
 
 
-def _header_value(scope: Scope, name: bytes) -> str | None:
+def _header_raw(scope: Scope, name: bytes) -> bytes | None:
     for key, value in scope.get("headers") or []:
         if key == name:
-            return value.decode("latin-1")
+            return value
     return None
+
+
+def _header_value(scope: Scope, name: bytes) -> str | None:
+    raw = _header_raw(scope, name)
+    return None if raw is None else raw.decode("latin-1")
 
 
 def _client_ip(scope: Scope, peer: str, trusted_proxies: set[str]) -> str:
@@ -172,21 +179,34 @@ def _client_ip(scope: Scope, peer: str, trusted_proxies: set[str]) -> str:
     return first or peer
 
 
-def _authorized(scope: Scope, expected: str) -> bool:
-    auth = _header_value(scope, b"authorization")
-    if auth and auth.lower().startswith("bearer "):
-        provided = auth[7:].strip()
-        if hmac.compare_digest(provided, expected):
+def _query_token(query_string: bytes) -> bytes | None:
+    """Read token= from a raw query string without ever decoding it to text.
+
+    parse_qs decodes a bytes query string as ASCII on Python below 3.13 and
+    raises UnicodeDecodeError on anything else, which would make a non-ASCII
+    token a 500 rather than a 401. Percent-decoding stays in the bytes domain.
+    """
+    for field in query_string.split(b"&"):
+        name, sep, value = field.partition(b"=")
+        if sep and name == b"token":
+            return unquote_to_bytes(value.replace(b"+", b" "))
+    return None
+
+
+def _authorized(scope: Scope, expected: bytes) -> bool:
+    """Compare tokens as bytes so a non-ASCII credential cannot raise."""
+    auth = _header_raw(scope, b"authorization")
+    if auth and auth[:7].lower() == b"bearer ":
+        if hmac.compare_digest(auth[7:].strip(), expected):
             return True
-    header_token = _header_value(scope, b"x-api-token")
+    header_token = _header_raw(scope, b"x-api-token")
     if header_token and hmac.compare_digest(header_token.strip(), expected):
         return True
     # EventSource cannot set Authorization — allow ?token= on SSE only.
     path = scope.get("path", "")
     if path == "/api/v1/events":
-        qs = parse_qs(scope.get("query_string", b"").decode("latin-1"))
-        candidates = qs.get("token") or []
-        if candidates and hmac.compare_digest(candidates[0], expected):
+        candidate = _query_token(scope.get("query_string", b"") or b"")
+        if candidate is not None and hmac.compare_digest(candidate, expected):
             return True
     return False
 

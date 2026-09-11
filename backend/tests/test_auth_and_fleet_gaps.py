@@ -26,6 +26,65 @@ def settings() -> Settings:
     )
 
 
+def test_authorized_rejects_non_ascii_without_raising() -> None:
+    """Non-ASCII token bytes must compare False, not raise from compare_digest.
+
+    Driven at the ASGI layer on purpose. A non-ASCII header cannot be sent
+    through every httpx version, but uvicorn hands the middleware raw bytes
+    regardless, which is exactly the input that used to turn a failed auth
+    attempt into a 500.
+    """
+    from app.middleware import _authorized
+
+    expected = b"secret-token"
+    # UTF-8 continuation bytes decode to codepoints > 127 under latin-1.
+    non_ascii = "\u00e9token".encode()
+
+    def scope(**over: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "path": "/api/v1/devices",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+        }
+        base.update(over)
+        return base
+
+    def bearer(value: bytes) -> dict[str, object]:
+        return scope(headers=[(b"authorization", b"Bearer " + value)])
+
+    def sse(query_string: bytes) -> dict[str, object]:
+        return scope(path="/api/v1/events", query_string=query_string)
+
+    assert _authorized(bearer(non_ascii), expected) is False
+    assert _authorized(scope(headers=[(b"x-api-token", non_ascii)]), expected) is False
+    # Raw and percent-encoded: parse_qs raised on both below Python 3.13.
+    assert _authorized(sse(b"token=" + non_ascii), expected) is False
+    assert _authorized(sse(b"token=%C3%A9token"), expected) is False
+    # Differing lengths are a plain mismatch, never an error.
+    assert _authorized(bearer(b"s"), expected) is False
+    # And the correct token still authorizes, by header or by query.
+    assert _authorized(bearer(b"secret-token"), expected) is True
+    assert _authorized(sse(b"token=secret-token"), expected) is True
+
+
+def test_query_token_parsing() -> None:
+    """The hand-rolled parser has to keep the parse_qs semantics it replaced."""
+    from app.middleware import _query_token
+
+    assert _query_token(b"token=abc") == b"abc"
+    assert _query_token(b"other=1&token=abc&more=2") == b"abc"
+    # First occurrence wins, as parse_qs list ordering did.
+    assert _query_token(b"token=first&token=second") == b"first"
+    assert _query_token(b"token=a%2Bb") == b"a+b"
+    assert _query_token(b"token=a+b") == b"a b"
+    assert _query_token(b"token=") == b""
+    assert _query_token(b"") is None
+    assert _query_token(b"tokenish=abc") is None
+    # A bare "token" with no "=" is not a value.
+    assert _query_token(b"token") is None
+
+
 @pytest.mark.asyncio
 async def test_api_token_required_when_configured(
     monkeypatch: pytest.MonkeyPatch,
@@ -150,8 +209,8 @@ def test_authorized_accepts_sse_query_token() -> None:
         "headers": [],
         "client": ("127.0.0.1", 12345),
     }
-    assert _authorized(scope, "sse-secret") is True
-    assert _authorized(scope, "wrong") is False
+    assert _authorized(scope, b"sse-secret") is True
+    assert _authorized(scope, b"wrong") is False
     assert _client_ip(scope, "127.0.0.1", {"127.0.0.1"}) == "127.0.0.1"
     scope["headers"] = [(b"x-forwarded-for", b"10.0.0.9, 127.0.0.1")]
     assert _client_ip(scope, "127.0.0.1", {"127.0.0.1"}) == "10.0.0.9"
