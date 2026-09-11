@@ -450,7 +450,9 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
           </button>
         </div>
       </div>
-      <p className="house-remote-keys">Space play/pause · arrows skip · M mute</p>
+      <p className="house-remote-keys">
+        Space or K play/pause · arrows or J/L skip · M mute
+      </p>
     </section>
   );
 }

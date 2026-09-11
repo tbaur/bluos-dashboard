@@ -13,7 +13,7 @@ Related CLI: [bluos-controller](https://github.com/tbaur/bluos-controller). This
 
 ## Features
 
-- **House remote** — artwork, title/album/source, rooms on the stream, live seek, skip, shuffle/repeat, mute, and stop all. Space play/pause, arrows skip, M mute. Skip keeps now-playing painted (no empty flash). When rooms are on different sources, pick which stream the remote drives.
+- **House remote** — artwork, title/album/source, rooms on the stream, live seek, skip, shuffle/repeat, mute, and stop all. Space or K play/pause, arrows or J/L skip, M mute. Skip keeps now-playing painted (no empty flash). When rooms are on different sources, pick which stream the remote drives.
 - **Fleet** — every player, live now-playing, A–Z or clustered by sync group (auto-switches to Sync when a group forms).
 - **Volume** — **Bluesound** (Nodes/Pulse) and **NAD CI S2** are separate sliders (different amp scales). CI S2 also has 42 / 50 / 60 / 70 chips.
 - **Multi-room** — create groups, add/remove followers, group all free rooms under a lead, ungroup one set or all. Break-all also clears orphans whose primary left the network.
@@ -39,7 +39,7 @@ make run       # API then UI (fails if :8000/:8765 busy; BSD_FORCE_FREE_PORTS=1 
 
 Open http://127.0.0.1:8765/ (API on http://127.0.0.1:8000/).
 
-For a LAN bind, set `BSD_API_TOKEN` in the repo-root `.env` and the same value as `VITE_API_TOKEN` in `frontend/.env` (Vite does not read the repo-root file). Copy [.env.example](.env.example) when you need non-default settings.
+For a LAN bind, set `BSD_HOST=0.0.0.0` and `BSD_API_TOKEN` in the repo-root `.env`, and the same token as `VITE_API_TOKEN` in `frontend/.env` (Vite does not read the repo-root file). `make run` picks up both. Without a token, a non-loopback bind logs an `insecure_bind` warning and leaves every control open to the LAN. Copy [.env.example](.env.example) when you need non-default settings.
 
 Full setup and checks: [CONTRIBUTING.md](CONTRIBUTING.md). Two-terminal start: [docs/RUNBOOK.md](docs/RUNBOOK.md). Variables: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 

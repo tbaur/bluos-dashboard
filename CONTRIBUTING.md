@@ -61,7 +61,7 @@ When behavior users or operators can see changes, update the matching docs in th
 | Supported versions / vuln process | [SECURITY.md](SECURITY.md) |
 | Release process or forcing a version (`Release-As`) | [RELEASING.md](RELEASING.md) |
 
-`CHANGELOG.md` is owned by [release-please](RELEASING.md) — do not hand-edit it for routine releases. Released version strings live in `.release-please-manifest.json`, `backend/app/__init__.py`, and `frontend/src/version.ts` (also release-please managed).
+`CHANGELOG.md` is owned by [release-please](RELEASING.md) — do not hand-edit it for routine releases. Released version strings are all release-please managed, in `.release-please-manifest.json`, `backend/app/__init__.py`, `frontend/src/version.ts`, `frontend/package.json`, `backend/pyproject.toml`, and the root `pyproject.toml`.
 
 ## Development setup
 
@@ -106,9 +106,21 @@ cd frontend
 npm run lint
 npm run typecheck
 npm test
-npx vitest run --coverage  # CI gate: lines/statements ≥60%
+npx vitest run --coverage  # CI gate: see thresholds in vite.config.ts
+npm audit --omit=dev --audit-level=moderate
 npm run build
 ```
+
+Coverage gates live next to the code they guard, so they stay correct as they are
+raised: `coverage report --fail-under=90` for the backend, and the `thresholds`
+block in [frontend/vite.config.ts](frontend/vite.config.ts) for the frontend
+(global lines/statements/functions/branches, plus a per-file floor on
+`src/store/fleetStore.ts`, which holds the optimistic-update logic).
+
+CI runs everything above on pull requests and in the merge queue, plus
+[CodeQL](.github/workflows/codeql.yml) on the same events. Because CI is not
+triggered by direct pushes to `main`, branch protection is what keeps unreviewed
+commits off it.
 
 ## Project structure
 
