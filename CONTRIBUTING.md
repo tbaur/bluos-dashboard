@@ -107,7 +107,8 @@ npm run lint
 npm run typecheck
 npm test
 npx vitest run --coverage  # CI gate: see thresholds in vite.config.ts
-npm audit --omit=dev --audit-level=moderate
+npm audit --omit=dev --audit-level=moderate  # CI gate (blocking)
+npm audit --audit-level=moderate             # CI reports the dev tree, non-blocking
 npm run build
 ```
 
