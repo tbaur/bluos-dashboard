@@ -117,10 +117,11 @@ block in [frontend/vite.config.ts](frontend/vite.config.ts) for the frontend
 (global lines/statements/functions/branches, plus a per-file floor on
 `src/store/fleetStore.ts`, which holds the optimistic-update logic).
 
-[Tests](.github/workflows/test.yml) runs everything above on pull requests and
-in the merge queue. [CodeQL](.github/workflows/codeql.yml) runs on pull requests,
-on pushes to `main`, and weekly. Note that CodeQL has no `merge_group` trigger,
-so it cannot be a required check while the merge queue is enabled.
+[Tests](.github/workflows/test.yml) runs everything above on pull requests, as
+`Backend (Python 3.10 | 3.13 | 3.14)` and `Frontend`. It also declares a
+`merge_group` trigger, which fires only if a merge queue is enabled.
+[CodeQL](.github/workflows/codeql.yml) runs on pull requests, on pushes to
+`main`, and weekly.
 
 ## Project structure
 
