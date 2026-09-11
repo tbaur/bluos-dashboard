@@ -85,6 +85,25 @@ async def test_readyz_ok_and_not_ready(settings: Settings, monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
+async def test_readyz_does_not_leak_exception_text(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+):
+    """/readyz is auth-exempt, so it reports the error class, never its message."""
+    app, client, poller = await _seeded_app(settings, monkeypatch)
+    poller.last_error = "connect failed at 192.168.1.20:11000 (internal-detail)"
+    poller.last_error_kind = "ConnectError"
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        response = await http.get("/api/v1/readyz")
+        assert response.status_code == 200
+        details = response.json()["details"]
+        assert details["last_error_kind"] == "ConnectError"
+        assert "last_error" not in details
+        assert "internal-detail" not in response.text
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_ip_not_allowed_when_non_private_disabled(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ):

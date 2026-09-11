@@ -193,3 +193,44 @@ async def test_root_serves_spa_index_when_built(
             response = await http.get("/")
             assert response.status_code == 200
             assert "ok" in response.text
+
+
+@pytest.mark.parametrize(
+    ("host", "token", "expected"),
+    [
+        ("127.0.0.1", "", False),
+        ("localhost", "", False),
+        ("::1", "", False),
+        ("0.0.0.0", "shared-secret", False),
+        ("0.0.0.0", "", True),
+        ("192.168.1.50", "", True),
+        ("0.0.0.0", "   ", True),
+    ],
+)
+def test_warn_if_open_to_network(host: str, token: str, expected: bool) -> None:
+    from app.main import warn_if_open_to_network
+
+    get_settings.cache_clear()
+    assert warn_if_open_to_network(Settings(host=host, api_token=token)) is expected
+
+
+@pytest.mark.asyncio
+async def test_drain_pending_refreshes_cancels_in_flight() -> None:
+    import asyncio
+
+    from app.api.common import _pending_refresh, drain_pending_refreshes
+
+    started = asyncio.Event()
+
+    async def slow() -> None:
+        started.set()
+        await asyncio.sleep(60)
+
+    task: asyncio.Task[object] = asyncio.create_task(slow())
+    _pending_refresh["device-1"] = task
+    await started.wait()
+
+    await drain_pending_refreshes()
+
+    assert task.cancelled()
+    assert _pending_refresh == {}

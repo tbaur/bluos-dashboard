@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.api.common import drain_pending_refreshes
 from app.api.errors import AppError
 from app.api.routes import router
 from app.bluos.client import BluOSClient
@@ -35,6 +36,26 @@ def _resolve_static_dir(settings: Settings) -> Path:
 def _ui_origin(settings: Settings) -> str:
     origins = settings.cors_origin_list()
     return origins[0] if origins else "http://127.0.0.1:8765"
+
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def warn_if_open_to_network(settings: Settings) -> bool:
+    """Log a warning when a non-loopback bind has no API token. Returns True if warned.
+
+    Reboot and stop apply to every discovered player, so an untokened LAN bind
+    hands that to any host on the network. Documented as allowed, never silent.
+    """
+    if settings.host in _LOOPBACK_HOSTS or settings.api_token.strip():
+        return False
+    logger.warning(
+        "insecure_bind host=%s — BSD_API_TOKEN is empty, so every control endpoint "
+        "(including fleet reboot) is open to the LAN. Set BSD_API_TOKEN, or bind "
+        "127.0.0.1. See docs/CONFIGURATION.md 'Network exposure'.",
+        settings.host,
+    )
+    return True
 
 
 def _api_home_html(settings: Settings) -> str:
@@ -175,6 +196,7 @@ def _api_home_html(settings: Settings) -> str:
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
+    warn_if_open_to_network(settings)
     client = BluOSClient(settings)
     events = EventBus(max_queue_size=settings.sse_queue_size)
     discovery = DiscoveryService(settings, client)
@@ -196,6 +218,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await poller.stop()
+        await drain_pending_refreshes()
         await client.aclose()
         logger.info("app_stopped")
 

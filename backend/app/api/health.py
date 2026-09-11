@@ -29,7 +29,8 @@ async def readyz(state: StateDep) -> HealthResponse:
         details={
             "device_count": len(state.discovery.snapshot.devices),
             "last_poll_at": state.poller.last_poll_at,
-            "last_error": state.poller.last_error,
+            # Class name only — /readyz is auth-exempt, so no exception text.
+            "last_error_kind": state.poller.last_error_kind,
             "sse_dropped_events": state.events.dropped_events,
             "sse_subscribers": state.events.subscriber_count,
         },
