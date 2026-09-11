@@ -36,7 +36,7 @@ The backend applies:
 - Pydantic input validation and HTTP security headers
 - Dependency auditing via Dependabot (npm, pip, GitHub Actions), CodeQL, `npm audit`, and `pip-audit` in CI
 
-There is **no interactive login**. For LAN binds beyond localhost, set optional `BSD_API_TOKEN` (Bearer / `X-API-Token`; SSE may use `?token=`) — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md) **Network exposure**. Otherwise treat bind address and CORS as the exposure boundary.
+There is **no interactive login**. For LAN binds beyond localhost, set optional `BSD_API_TOKEN` (Bearer / `X-API-Token`; SSE may use `?token=`) — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md) **Network exposure**. Otherwise treat bind address and CORS as the exposure boundary. Starting with a non-loopback bind and no token logs an `insecure_bind` warning; tokens are compared as bytes in constant time, so a malformed header is rejected rather than raising.
 
 Details and variable names: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 

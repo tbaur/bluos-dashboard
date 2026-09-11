@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -58,11 +57,3 @@ class EventBus:
                         self.dropped_events,
                     )
 
-    async def stream(self) -> AsyncIterator[str]:
-        queue = await self.subscribe()
-        try:
-            while True:
-                payload = await queue.get()
-                yield payload
-        finally:
-            await self.unsubscribe(queue)

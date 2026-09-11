@@ -66,6 +66,13 @@ jobs:
         run: npm ci
       - name: Audit
         run: npm audit --omit=dev --audit-level=moderate
+      # Everything but react, react-dom, react-router and zustand is a dev
+      # dependency here, so the gate above covers very little. Dev-tree
+      # advisories are often unfixable upstream and must not block unrelated
+      # PRs, but they should not be invisible either: report and continue.
+      - name: Audit dev tree (advisory only)
+        continue-on-error: true
+        run: npm audit --audit-level=moderate
       - name: Lint
         run: npm run lint
       - name: Typecheck

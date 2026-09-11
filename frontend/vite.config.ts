@@ -19,7 +19,8 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        // Follows BSD_PORT so a non-default API port still works under `make run`.
+        target: `http://127.0.0.1:${process.env.BSD_PORT ?? '8000'}`,
         changeOrigin: true,
       },
     },
@@ -34,9 +35,19 @@ export default defineConfig({
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/main.tsx', 'src/vite-env.d.ts', 'src/version.ts'],
       thresholds: {
-        lines: 60,
-        functions: 50,
-        statements: 60,
+        lines: 72,
+        functions: 70,
+        statements: 72,
+        branches: 62,
+        // The store holds the optimistic-update and hold-window logic, which is
+        // where the subtle races live. Gate it on its own so a global average
+        // cannot hide a regression here.
+        'src/store/fleetStore.ts': {
+          lines: 52,
+          functions: 55,
+          statements: 52,
+          branches: 46,
+        },
       },
     },
   },

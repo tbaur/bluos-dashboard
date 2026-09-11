@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from urllib.parse import urljoin, urlparse
@@ -192,8 +193,10 @@ class BluOSTransport:
                 last_error = exc
                 if attempt + 1 >= retries or control:
                     break
-                delay = min(10.0, (2**attempt) + 0.1)
-                await asyncio.sleep(delay)
+                # Jitter the backoff: a LAN blip fails every device at once, and
+                # a fixed delay would march them all back in lockstep.
+                base = min(10.0, (2**attempt) + 0.1)
+                await asyncio.sleep(base * (0.5 + random.random() / 2))
         if last_error:
             logger.debug(
                 "bluos_request_failed endpoint=%s path=%s err=%s",

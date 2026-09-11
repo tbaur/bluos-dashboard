@@ -113,10 +113,18 @@ export function isDualRangeValid(setting: DeviceSetting, draft: string): boolean
   return true;
 }
 
+// Patterns are scraped from the player's own web UI, which is untrusted input.
+// A catastrophic-backtracking pattern does not throw, it hangs the tab, so bound
+// both sides: long patterns are not applied, and long drafts are not tested.
+const MAX_PATTERN_LENGTH = 200;
+const MAX_VALIDATED_LENGTH = 256;
+
 export function isTextValueValid(setting: DeviceSetting, draft: string): boolean {
   const trimmed = draft.trim();
   if (!trimmed) return false;
   if (!setting.pattern) return true;
+  if (setting.pattern.length > MAX_PATTERN_LENGTH) return true;
+  if (trimmed.length > MAX_VALIDATED_LENGTH) return false;
   try {
     return new RegExp(`^(?:${setting.pattern})$`).test(trimmed);
   } catch {

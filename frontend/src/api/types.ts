@@ -1,5 +1,21 @@
 export type SyncRole = 'primary' | 'synced' | 'standalone';
 
+/** Reachability, decided by our poller — not by the device. */
+export type PlayerReachability = 'online' | 'offline';
+
+/**
+ * BluOS transport state. The known values get autocomplete and typo-checking;
+ * the open `string` arm is deliberate, because this is copied verbatim out of
+ * device XML and a firmware revision may report something new.
+ */
+export type PlayerState =
+  | 'play'
+  | 'pause'
+  | 'stop'
+  | 'stream'
+  | 'connecting'
+  | (string & {});
+
 export interface PlayerStatus {
   id: string;
   ip: string;
@@ -14,8 +30,8 @@ export interface PlayerStatus {
   zone?: number | null;
   device_class: string;
   mac: string;
-  status: string;
-  state: string;
+  status: PlayerReachability;
+  state: PlayerState;
   service: string;
   service_id: string;
   volume: number;

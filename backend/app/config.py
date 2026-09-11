@@ -72,8 +72,6 @@ class Settings(BaseSettings):
 
     bluos_port: int = Field(default=11000, ge=1, le=65535)
     web_ui_port: int = Field(default=80, ge=1, le=65535)
-    # Deprecated: discovery always browses _musc + _musp. Kept for env compat.
-    mdns_service: str = "_musc._tcp.local."
     static_dir: str = ""
 
     @field_validator("host")

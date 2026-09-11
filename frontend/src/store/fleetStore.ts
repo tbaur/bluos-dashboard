@@ -188,6 +188,105 @@ function clearHouseCatchupTimer() {
   }
 }
 
+function holdsOf(state: FleetState, now: number): RemoteHolds {
+  return {
+    volumeHoldUntil: state.volumeHoldUntil,
+    playbackHoldUntil: state.playbackHoldUntil,
+    muteHoldUntil: state.muteHoldUntil,
+    globalVolumeHoldUntil: state.globalVolumeHoldUntil,
+    now,
+  };
+}
+
+/**
+ * Fold a server device list into local state. Every path that accepts a remote
+ * fleet goes through here — SSE and REST alike — so an in-flight volume drag or
+ * skip is never stomped by whichever transport happens to answer first.
+ */
+function mergedDeviceList(state: FleetState, incoming: PlayerStatus[]): PlayerStatus[] {
+  const holds = holdsOf(state, Date.now());
+  const byId = new Map(state.devices.map((d) => [d.id, d]));
+  return incoming.map((device) => mergeRemoteDevice(device, byId.get(device.id), holds));
+}
+
+/** Drop hold/volume memory for ids that left the fleet or whose window lapsed. */
+function pruneById(
+  entries: Record<string, number>,
+  liveIds: Set<string>,
+  now: number,
+): Record<string, number> {
+  const next: Record<string, number> = {};
+  let dropped = false;
+  for (const [id, value] of Object.entries(entries)) {
+    if (liveIds.has(id) && value > now) next[id] = value;
+    else dropped = true;
+  }
+  return dropped ? next : entries;
+}
+
+function pruneKeys(
+  entries: Record<string, number>,
+  liveIds: Set<string>,
+): Record<string, number> {
+  const next: Record<string, number> = {};
+  let dropped = false;
+  for (const [id, value] of Object.entries(entries)) {
+    if (liveIds.has(id)) next[id] = value;
+    else dropped = true;
+  }
+  return dropped ? next : entries;
+}
+
+/** Hold maps and volume memory, trimmed to the devices the server still reports. */
+function prunedHolds(
+  state: FleetState,
+  incoming: PlayerStatus[],
+): Pick<
+  FleetState,
+  'volumeHoldUntil' | 'playbackHoldUntil' | 'muteHoldUntil' | 'lastAudibleVolume'
+> {
+  const liveIds = new Set(incoming.map((d) => d.id));
+  const now = Date.now();
+  return {
+    volumeHoldUntil: pruneById(state.volumeHoldUntil, liveIds, now),
+    playbackHoldUntil: pruneById(state.playbackHoldUntil, liveIds, now),
+    muteHoldUntil: pruneById(state.muteHoldUntil, liveIds, now),
+    lastAudibleVolume: pruneKeys(state.lastAudibleVolume, liveIds),
+  };
+}
+
+/** True when a sync snapshot is older than the group we optimistically painted. */
+function isStaleSync(state: FleetState, incoming: SyncState | null): boolean {
+  return (
+    Date.now() < state.syncHoldUntil &&
+    (state.sync?.groups.length ?? 0) > 0 &&
+    (incoming?.groups.length ?? 0) < (state.sync?.groups.length ?? 0)
+  );
+}
+
+/** Restore named fields from a pre-action snapshot so a failed write is undone. */
+function revertFields<K extends keyof PlayerStatus>(
+  devices: PlayerStatus[],
+  snapshot: Map<string, PlayerStatus>,
+  fields: readonly K[],
+): PlayerStatus[] {
+  return devices.map((device) => {
+    const before = snapshot.get(device.id);
+    if (!before) return device;
+    const patch = {} as Pick<PlayerStatus, K>;
+    for (const field of fields) {
+      patch[field] = before[field];
+    }
+    return { ...device, ...patch };
+  });
+}
+
+function releaseHold(entries: Record<string, number>, ids: Iterable<string>): Record<string, number> {
+  const next = { ...entries };
+  for (const id of ids) delete next[id];
+  return next;
+}
+
 export const useFleetStore = create<FleetState>((set, get) => ({
   devices: [],
   discoveredAt: null,
@@ -207,39 +306,19 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   syncHoldUntil: 0,
   lastAudibleVolume: {},
 
-  setFleet: (devices, discoveredAt = null) => {
-    const now = Date.now();
-    const state = get();
-    const byId = new Map(state.devices.map((d) => [d.id, d]));
-    const holds = {
-      volumeHoldUntil: state.volumeHoldUntil,
-      playbackHoldUntil: state.playbackHoldUntil,
-      muteHoldUntil: state.muteHoldUntil,
-      globalVolumeHoldUntil: state.globalVolumeHoldUntil,
-      now,
-    };
-    const merged = devices.map((incoming) =>
-      mergeRemoteDevice(incoming, byId.get(incoming.id), holds),
-    );
-    set({
-      devices: merged,
+  setFleet: (devices, discoveredAt = null) =>
+    set((state) => ({
+      devices: mergedDeviceList(state, devices),
+      ...prunedHolds(state, devices),
       discoveredAt: discoveredAt ?? state.discoveredAt,
       loading: false,
       error: null,
-    });
-  },
+    })),
 
   upsertDevice: (device) =>
     set((state) => {
-      const now = Date.now();
       const previous = state.devices.find((d) => d.id === device.id);
-      const merged = mergeRemoteDevice(device, previous, {
-        volumeHoldUntil: state.volumeHoldUntil,
-        playbackHoldUntil: state.playbackHoldUntil,
-        muteHoldUntil: state.muteHoldUntil,
-        globalVolumeHoldUntil: state.globalVolumeHoldUntil,
-        now,
-      });
+      const merged = mergeRemoteDevice(device, previous, holdsOf(state, Date.now()));
       const exists = Boolean(previous);
       return {
         devices: exists
@@ -332,13 +411,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   setSync: (sync) =>
     set((state) => {
       // Drop stale sync while BluOS catches up after AddSlave (SSE often races ahead).
-      if (
-        Date.now() < state.syncHoldUntil &&
-        (state.sync?.groups.length ?? 0) > 0 &&
-        (sync?.groups.length ?? 0) < (state.sync?.groups.length ?? 0)
-      ) {
-        return {};
-      }
+      if (isStaleSync(state, sync)) return {};
       return { sync, syncHoldUntil: 0 };
     }),
   setHealth: (health) => set({ health }),
@@ -404,7 +477,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
       });
       try {
         const fleet = await api.listDevices();
-        set({ devices: fleet.devices });
+        set((state) => ({ devices: mergedDeviceList(state, fleet.devices) }));
       } catch {
         // ignore secondary failure
       }
@@ -445,6 +518,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   fleetMuteAll: async (mute) => {
     const devices = get().devices;
     if (devices.length === 0) return;
+    const before = new Map(devices.map((d) => [d.id, d]));
 
     if (mute) {
       set((state) => {
@@ -485,16 +559,21 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         });
       }
     } catch (err) {
-      set({
+      // Undo the optimistic paint and release the holds so server truth returns.
+      set((state) => ({
+        devices: revertFields(state.devices, before, ['muted', 'volume']),
+        muteHoldUntil: releaseHold(state.muteHoldUntil, before.keys()),
+        volumeHoldUntil: releaseHold(state.volumeHoldUntil, before.keys()),
         toast:
           err instanceof ApiError
             ? `${err.message} (${err.requestId})`
             : 'Fleet mute failed',
-      });
+      }));
     }
   },
 
   fleetPauseAll: async () => {
+    const before = new Map(get().devices.map((d) => [d.id, d]));
     set((state) => {
       const playbackHoldUntil = { ...state.playbackHoldUntil };
       const until = Date.now() + MUTE_HOLD_MS;
@@ -517,16 +596,19 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         });
       }
     } catch (err) {
-      set({
+      set((state) => ({
+        devices: revertFields(state.devices, before, ['state']),
+        playbackHoldUntil: releaseHold(state.playbackHoldUntil, before.keys()),
         toast:
           err instanceof ApiError
             ? `${err.message} (${err.requestId})`
             : 'Pause all failed',
-      });
+      }));
     }
   },
 
   fleetStopAll: async () => {
+    const before = new Map(get().devices.map((d) => [d.id, d]));
     get().beginHouseStopped();
     set((state) => {
       const until = Date.now() + MUTE_HOLD_MS;
@@ -544,12 +626,17 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         });
       }
     } catch (err) {
-      set({
+      // Also drop the "stopped" house session — nothing actually stopped.
+      clearHouseCatchupTimer();
+      set((state) => ({
+        devices: revertFields(state.devices, before, ['state']),
+        playbackHoldUntil: releaseHold(state.playbackHoldUntil, before.keys()),
+        houseSession: LIVE_HOUSE_SESSION,
         toast:
           err instanceof ApiError
             ? `${err.message} (${err.requestId})`
             : 'Stop all failed',
-      });
+      }));
     }
   },
 
@@ -578,21 +665,24 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   },
 
   load: async () => {
-    set({ loading: true, error: null });
+    // `load` doubles as the 5s poll while SSE is down. Only show the discovery
+    // placeholder when there is nothing to show, or the fleet blanks every tick.
+    set({ loading: get().devices.length === 0, error: null });
     try {
       const [fleet, sync, health] = await Promise.all([
         api.listDevices(),
         api.getSync(),
         api.getFleetHealth().catch(() => get().health),
       ]);
-      set({
-        devices: fleet.devices,
+      set((state) => ({
+        devices: mergedDeviceList(state, fleet.devices),
+        ...prunedHolds(state, fleet.devices),
         discoveredAt: fleet.discovered_at,
         discoveryMethod: fleet.discovery_method,
-        sync,
-        health: health ?? get().health,
+        ...(isStaleSync(state, sync) ? {} : { sync, syncHoldUntil: 0 }),
+        health: health ?? state.health,
         loading: false,
-      });
+      }));
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to load devices';
       set({ loading: false, error: message });
@@ -607,14 +697,15 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         api.getSync(),
         api.getFleetHealth().catch(() => get().health),
       ]);
-      set({
-        devices: fleet.devices,
+      set((state) => ({
+        devices: mergedDeviceList(state, fleet.devices),
+        ...prunedHolds(state, fleet.devices),
         discoveredAt: fleet.discovered_at,
         discoveryMethod: fleet.discovery_method,
-        sync,
-        health: health ?? get().health,
+        ...(isStaleSync(state, sync) ? {} : { sync, syncHoldUntil: 0 }),
+        health: health ?? state.health,
         refreshing: false,
-      });
+      }));
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Refresh failed';
       set({ refreshing: false, error: message, toast: message });
@@ -644,23 +735,25 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         ]);
         if (!linkPresent(sync)) {
           // BluOS SyncStatus often lags AddSlave — keep optimistic sync painted.
-          set({
-            devices: fleet.devices,
+          set((state) => ({
+            devices: mergedDeviceList(state, fleet.devices),
+            ...prunedHolds(state, fleet.devices),
             discoveredAt: fleet.discovered_at,
             discoveryMethod: fleet.discovery_method,
-            health: health ?? get().health,
-          });
+            health: health ?? state.health,
+          }));
           await new Promise((r) => window.setTimeout(r, 200));
           continue;
         }
-        set({
-          devices: fleet.devices,
+        set((state) => ({
+          devices: mergedDeviceList(state, fleet.devices),
+          ...prunedHolds(state, fleet.devices),
           discoveredAt: fleet.discovered_at,
           discoveryMethod: fleet.discovery_method,
           sync,
-          health: health ?? get().health,
+          health: health ?? state.health,
           syncHoldUntil: 0,
-        });
+        }));
         return;
       } catch (err) {
         lastError = err;

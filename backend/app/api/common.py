@@ -135,6 +135,16 @@ def schedule_refresh(state: AppState, device_id: str) -> None:
     task.add_done_callback(_done)
 
 
+async def drain_pending_refreshes() -> None:
+    """Cancel and await in-flight refreshes so shutdown leaves no live tasks."""
+    tasks = [task for task in _pending_refresh.values() if not task.done()]
+    _pending_refresh.clear()
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 async def run_control(state: AppState, device_id: str, op_name: str, coro: ControlOp) -> Response:
     ip = require_device(state, device_id)
     logger.info(

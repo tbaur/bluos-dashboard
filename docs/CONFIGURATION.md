@@ -31,6 +31,18 @@ The backend only talks to discovered private IPs (see `BSD_ALLOW_NON_PRIVATE_IPS
 | `BSD_STATIC_DIR` | *(empty)* | SPA dist directory for single-process serve (path relative to uvicorn cwd) |
 | `BSD_ENABLE_OPENAPI` | auto | OpenAPI/Swagger; auto-off when binding beyond localhost |
 
+`BSD_HOST` and `BSD_PORT` are read by the API and by `make run` (from the environment first, then the repo-root `.env`). `make run` also passes the port to Vite so the dev proxy follows it. When `BSD_HOST` is `0.0.0.0`, the health probe and the UI proxy still use `127.0.0.1`.
+
+Binding beyond loopback with an empty `BSD_API_TOKEN` logs an `insecure_bind` warning at startup — every control endpoint, including fleet reboot, is then open to the LAN.
+
+## Scripts
+
+These are read by `scripts/run` only, not by the API.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `BSD_FORCE_FREE_PORTS` | `0` | `1` kills existing listeners on the API/UI ports instead of failing |
+
 ## Discovery
 
 | Variable | Default | Purpose |
@@ -43,7 +55,6 @@ The backend only talks to discovered private IPs (see `BSD_ALLOW_NON_PRIVATE_IPS
 | `BSD_SSE_KEEPALIVE_SECONDS` | `15` | SSE keepalive interval |
 | `BSD_SSE_QUEUE_SIZE` | `32` | Per-subscriber SSE queue size (drop-oldest under backpressure) |
 | `BSD_ALLOW_NON_PRIVATE_IPS` | `false` | Escape hatch — allow non-private device IPs (unsafe) |
-| `BSD_MDNS_SERVICE` | `_musc._tcp.local.` | Deprecated — ignored; mDNS always browses `_musc` + `_musp` |
 | `BSD_BLUOS_PORT` | `11000` | Default BluOS HTTP port (CI secondary zones use SRV ports, e.g. `11010+`) |
 | `BSD_WEB_UI_PORT` | `80` | Device web UI port (diagnostics, upgrade, setting writes) |
 

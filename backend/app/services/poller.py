@@ -42,7 +42,10 @@ class StatusPoller:
         self._last_status_at: dict[str, float] = {}
         self.running = False
         self.last_poll_at: float | None = None
+        # Full text stays process-local (logs only); `last_error_kind` is the
+        # exception class name, safe to expose on the unauthenticated /readyz.
         self.last_error: str | None = None
+        self.last_error_kind: str | None = None
 
     def start(self) -> None:
         if self._task and not self._task.done():
@@ -92,8 +95,10 @@ class StatusPoller:
                 await self._reconcile()
                 self.last_poll_at = time.time()
                 self.last_error = None
+                self.last_error_kind = None
             except Exception as exc:  # noqa: BLE001
                 self.last_error = str(exc)
+                self.last_error_kind = type(exc).__name__
                 logger.exception("poller_cycle_failed")
             wait = max(0.5, self.settings.long_poll_gap_seconds)
             await self._sleep(wait)
@@ -156,6 +161,7 @@ class StatusPoller:
         if device.status == "online":
             self.health.note_seen_online(device.id, time.time())
         self._last_status_at[device.id] = time.monotonic()
+        fleet_before = self._fleet_signature()
         try:
             snap = await self._fetch_snapshot(device)
         except Exception as exc:
@@ -166,7 +172,22 @@ class StatusPoller:
             player = self._apply_poll_result(device, snap.player)
         await self.discovery.update_device(player)
         self.last_poll_at = time.time()
-        await self.events.publish("fleet", self.fleet_payload())
+        # A track or seek tick only moves one player; sending the whole fleet on
+        # every poll costs O(devices) serialization and re-renders the whole UI.
+        if self._fleet_signature() == fleet_before:
+            await self.events.publish("device", player.model_dump())
+        else:
+            await self.events.publish("fleet", self.fleet_payload())
+
+    def _fleet_signature(self) -> tuple[object, ...]:
+        """Fields that change the fleet-level payload (sync graph + health)."""
+        return (
+            self.health.revision,
+            tuple(
+                (d.id, d.name, d.endpoint, d.sync_role, tuple(d.slaves), d.master, d.status)
+                for d in self.discovery.snapshot.devices
+            ),
+        )
 
     async def _fetch_snapshot(self, device: PlayerStatus) -> PlayerSnapshot:
         etag = self._status_etags.get(device.id)
@@ -233,6 +254,7 @@ class StatusPoller:
         self._last_status_at.pop(device_id, None)
         self._failures.pop(device_id, None)
         self._next_due.pop(device_id, None)
+        self.health.forget(device_id)
 
     async def _cancel_watchers(self) -> None:
         tasks = list(self._watchers.values())

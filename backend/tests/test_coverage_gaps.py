@@ -317,27 +317,6 @@ def test_config_validators() -> None:
     assert Settings().is_allowed_device_ip("::1") is False
 
 
-@pytest.mark.asyncio
-async def test_event_bus_stream() -> None:
-    import asyncio
-
-    from app.services.events import EventBus
-
-    bus = EventBus(max_queue_size=2)
-
-    async def producer() -> None:
-        await asyncio.sleep(0.01)
-        await bus.publish("tick", {"n": 1})
-
-    task = asyncio.create_task(producer())
-    chunks: list[str] = []
-    async for payload in bus.stream():
-        chunks.append(payload)
-        break
-    await task
-    assert '"tick"' in chunks[0]
-
-
 def test_get_request_id_helper() -> None:
     from app.api.errors import get_request_id
     from app.logging import request_id_var

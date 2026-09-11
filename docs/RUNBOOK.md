@@ -6,7 +6,9 @@
 make run
 ```
 
-That starts the API, waits for `GET /api/v1/healthz`, then starts the UI (avoids Vite proxying to a dead `:8000`). It fails if `:8000` or `:8765` is already in use; set `BSD_FORCE_FREE_PORTS=1` to kill those listeners.
+That starts the API, waits for `GET /api/v1/healthz`, then starts the UI (avoids Vite proxying to a dead API). It fails if the API or UI port is already in use; set `BSD_FORCE_FREE_PORTS=1` to kill those listeners.
+
+The API bind comes from `BSD_HOST` / `BSD_PORT` — environment first, then the repo-root `.env`, else `127.0.0.1:8000` — and the Vite dev proxy follows the port. The UI stays on `127.0.0.1:8765`.
 
 Or two terminals (start UI only after healthz returns 200):
 
@@ -41,7 +43,7 @@ Environment variables: [CONFIGURATION.md](CONFIGURATION.md). Network exposure no
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/v1/healthz` | Liveness — process up; `status: degraded` when the poller is stopped |
-| `GET /api/v1/readyz` | Readiness — 503 when poller is not running; includes `sse_dropped_events` and subscriber count |
+| `GET /api/v1/readyz` | Readiness — 503 when poller is not running; includes `sse_dropped_events`, subscriber count, and `last_error_kind` (exception class only; the message goes to logs, since this endpoint needs no token) |
 | `GET /api/v1/version` | Release version |
 | `GET /api/v1/fleet/health` | In-memory poller drop history (this process; 24h window; resets on restart). Also included on SSE `fleet` events |
 | `GET /health` | Redirects to `/api/v1/healthz` (so SPA catch-all never serves HTML for `/health`) |
@@ -72,7 +74,8 @@ Vite proxies `/api` → the API. CORS defaults allow both `http://127.0.0.1:8765
 | `:11000` Status/SyncStatus every 3s | Old dashboard process (pre-etag long-poll) | Restart after this release — online players long-poll `/Status` |
 | Bluetooth section missing | Model/probe reports unsupported | Normal for many CI zones and players without BT |
 | SSE reconnecting / stale UI | Proxy buffering, backend restart, or SSE backpressure | Check backend logs for `sse_drop_subscriber`; UI uses exponential reconnect, then after 8 failures shows **Offline**, keeps REST polling every 5s, and retries SSE every 60s until live again (empty fleet uses `BSD_EMPTY_FLEET_REDISCOVERY_SECONDS` cache — not a full discovery each poll) |
-| `make run` says port in use | Something already listens on `:8000`/`:8765` | Stop that process, or `BSD_FORCE_FREE_PORTS=1 make run` |
+| `make run` says port in use | Something already listens on the API/UI port | Stop that process, or `BSD_FORCE_FREE_PORTS=1 make run` |
+| Every control returns `401` from a LAN bind, or logs show `insecure_bind` | `BSD_HOST` is not loopback and `BSD_API_TOKEN` is empty or mismatched | Set `BSD_API_TOKEN` and the matching `VITE_API_TOKEN` in `frontend/.env`; see [CONFIGURATION.md](CONFIGURATION.md) **Network exposure** |
 | `401 unauthorized` from API | `BSD_API_TOKEN` set without matching UI token | Put the same value in `frontend/.env` as `VITE_API_TOKEN` (Vite does not read repo-root `.env`) |
 | Vite `ECONNREFUSED` / proxy errors to `:8000` | UI started before API was healthy | Use `make run` (waits for healthz); or start API first and confirm healthz before `npm run dev` |
 

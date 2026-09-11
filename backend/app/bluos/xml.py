@@ -1,4 +1,11 @@
-"""XXE/DoS-hardened XML parsing for BluOS responses."""
+"""XXE/DoS-hardened XML parsing for BluOS responses.
+
+Entity-expansion attacks (billion laughs, quadratic blowup) are rejected by
+libexpat's own amplification limit, which needs libexpat >= 2.4.0. The caps
+below run after the parse and bound tree *shape*, not expansion, so
+``test_validators_xml`` pins the expat behaviour rather than trusting it
+silently. ElementTree never resolves external entities, so XXE is not reachable.
+"""
 
 from __future__ import annotations
 

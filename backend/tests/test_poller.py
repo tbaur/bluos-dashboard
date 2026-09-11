@@ -74,7 +74,77 @@ async def test_poll_once_updates_online_devices(
     await poller._poll_once()
     assert discovery.snapshot.devices[0].volume == 9
     assert poller._failures.get("p1") == 0
-    assert any(event == "fleet" for event, _ in published)
+    # Volume-only change leaves the sync graph and health untouched, so the
+    # poller sends a single-device delta rather than the whole fleet.
+    assert [event for event, _ in published] == ["device"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_poll_once_publishes_fleet_when_sync_graph_changes(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.ips_by_id = {"p1": "192.168.1.20"}
+    events = EventBus()
+    poller = StatusPoller(settings, discovery, client, events)
+    published: list[tuple[str, object]] = []
+
+    async def capture(event: str, payload: object) -> None:
+        published.append((event, payload))
+
+    monkeypatch.setattr(events, "publish", capture)
+
+    async def fake_load(target: str, **_kwargs: object) -> PlayerSnapshot:
+        ip = str(target).split(":")[0]
+        return PlayerSnapshot(
+            player=PlayerStatus(
+                id="p1",
+                ip=ip,
+                name="K",
+                status="online",
+                slaves=["192.168.1.21:11000"],
+            ),
+            status_etag="e1",
+            sync_stat="s2",
+        )
+
+    monkeypatch.setattr(client, "load_player", fake_load)
+    await poller._poll_once()
+    assert [event for event, _ in published] == ["fleet"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_poll_once_publishes_fleet_when_device_drops(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.ips_by_id = {"p1": "192.168.1.20"}
+    events = EventBus()
+    poller = StatusPoller(settings, discovery, client, events)
+    published: list[tuple[str, object]] = []
+
+    async def capture(event: str, payload: object) -> None:
+        published.append((event, payload))
+
+    monkeypatch.setattr(events, "publish", capture)
+
+    async def boom(target: str, **_kwargs: object) -> PlayerSnapshot:
+        raise RuntimeError("unreachable")
+
+    monkeypatch.setattr(client, "load_player", boom)
+    await poller._poll_once()
+    # online -> offline changes both status and the health log.
+    assert [event for event, _ in published] == ["fleet"]
     await client.aclose()
 
 
@@ -177,4 +247,48 @@ async def test_run_loop_records_cycle_error(
         await asyncio.sleep(0.05)
     await poller.stop()
     assert poller.last_error == "cycle failed"
+    assert poller.last_error_kind == "RuntimeError"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_watchers_stuck_in_a_long_poll(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A watcher parked in a 100s long-poll must not delay shutdown.
+
+    Long-poll reads can outlast the whole shutdown budget, so stop() has to
+    cancel them rather than wait. This pins that: the wait is bounded by
+    cancellation, not by the read timeout.
+    """
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.ips_by_id = {"p1": "192.168.1.20"}
+    events = EventBus()
+    poller = StatusPoller(settings, discovery, client, events)
+
+    entered = asyncio.Event()
+
+    async def never_returns(target: str, **_kwargs: object) -> PlayerSnapshot:
+        entered.set()
+        await asyncio.sleep(3600)
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(client, "load_player", never_returns)
+
+    async def seeded(*_args: object, **_kwargs: object) -> object:
+        return discovery._snapshot
+
+    monkeypatch.setattr(discovery, "refresh", seeded)
+    monkeypatch.setattr(discovery, "get_devices", seeded)
+
+    poller.start()
+    await asyncio.wait_for(entered.wait(), timeout=5)
+
+    await asyncio.wait_for(poller.stop(), timeout=5)
+    assert poller.running is False
+    assert not poller._watchers
     await client.aclose()
