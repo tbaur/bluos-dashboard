@@ -117,10 +117,10 @@ block in [frontend/vite.config.ts](frontend/vite.config.ts) for the frontend
 (global lines/statements/functions/branches, plus a per-file floor on
 `src/store/fleetStore.ts`, which holds the optimistic-update logic).
 
-CI runs everything above on pull requests and in the merge queue, plus
-[CodeQL](.github/workflows/codeql.yml) on the same events. Because CI is not
-triggered by direct pushes to `main`, branch protection is what keeps unreviewed
-commits off it.
+[Tests](.github/workflows/test.yml) runs everything above on pull requests and
+in the merge queue. [CodeQL](.github/workflows/codeql.yml) runs on pull requests,
+on pushes to `main`, and weekly. Note that CodeQL has no `merge_group` trigger,
+so it cannot be a required check while the merge queue is enabled.
 
 ## Project structure
 
