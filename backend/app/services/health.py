@@ -41,11 +41,24 @@ class HealthLog:
         self.started_at = started_at if started_at is not None else time.time()
         self._first_online: dict[str, float] = {}
         self._drops: list[_Drop] = []
+        # Bumped whenever the snapshot payload would differ, so callers can skip
+        # republishing an unchanged fleet.
+        self.revision = 0
 
     def note_seen_online(self, device_id: str, now: float) -> None:
         """Mark a player as known-up so a later failed poll counts as a drop."""
         if device_id not in self._first_online:
             self._first_online[device_id] = now
+            self.revision += 1
+
+    def forget(self, device_id: str) -> None:
+        """Drop all history for a device that left the network for good."""
+        if self._first_online.pop(device_id, None) is not None:
+            self.revision += 1
+        remaining = [d for d in self._drops if d.device_id != device_id]
+        if len(remaining) != len(self._drops):
+            self._drops = remaining
+            self.revision += 1
 
     def observe(self, player: PlayerStatus, *, previous_failures: int, now: float) -> None:
         if player.status == "online":
@@ -66,11 +79,15 @@ class HealthLog:
                     slow_poll=failures >= self.circuit_threshold,
                 )
             )
+            self.revision += 1
         else:
+            before = (open_drop.name, open_drop.peak_failures, open_drop.slow_poll)
             open_drop.name = player.name or open_drop.name
             open_drop.peak_failures = max(open_drop.peak_failures, failures)
             if failures >= self.circuit_threshold:
                 open_drop.slow_poll = True
+            if (open_drop.name, open_drop.peak_failures, open_drop.slow_poll) != before:
+                self.revision += 1
         self._prune(now)
 
     def snapshot(self, now: float | None = None) -> FleetHealthResponse:
@@ -100,6 +117,7 @@ class HealthLog:
         open_drop.ended_at = now
         if name:
             open_drop.name = name
+        self.revision += 1
 
     def _prune(self, now: float) -> None:
         cutoff = now - self.window_seconds
@@ -115,6 +133,8 @@ class HealthLog:
             closed = [d for d in kept if d.ended_at is not None]
             remove = {id(item) for item in closed[:overflow]}
             kept = [d for d in kept if id(d) not in remove]
+        if len(kept) != len(self._drops):
+            self.revision += 1
         self._drops = kept
 
     @staticmethod
