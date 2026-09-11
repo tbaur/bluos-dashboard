@@ -71,6 +71,14 @@ export function PlayerRow({ device }: { device: PlayerStatus }) {
     }
   }, [device.volume, dragging]);
 
+  // Unmounting mid-drag (sort change, rescan) must not fire a late volume write.
+  useEffect(
+    () => () => {
+      if (commitTimer.current) window.clearTimeout(commitTimer.current);
+    },
+    [],
+  );
+
   const flushVolume = (level: number) => {
     latestLevel.current = level;
     void control(device.id, () => api.setVolume(device.id, level), { volume: level });
