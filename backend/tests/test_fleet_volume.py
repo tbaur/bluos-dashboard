@@ -13,6 +13,7 @@ from app.models import PlayerStatus
 from app.services.events import EventBus
 from app.services.poller import StatusPoller
 from app.state import AppState
+from tests.helpers import app_with_players
 
 
 @pytest.fixture
@@ -138,4 +139,127 @@ async def test_fleet_volume_filters_device_ids(
             "172.16.10.144:11000",
             "172.16.10.144:11010",
         }
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_fleet_control_does_not_rebrowse_stale_cache(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mute and volume must use the poller snapshot, not a 5s mDNS+enrich pass."""
+    players = [
+        PlayerStatus(id="player-a", ip="192.168.1.10", name="A", status="online"),
+        PlayerStatus(id="player-b", ip="192.168.1.11", name="B", status="online"),
+    ]
+    app, client, discovery, _ = await app_with_players(
+        settings, monkeypatch, players=players
+    )
+    discovery._snapshot.discovered_at = 1.0
+    client.set_volume = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    client.set_mute = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    client.stop = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    async def forbidden(*_args: object, **_kwargs: object):
+        raise AssertionError("fleet control must not call get_devices()")
+
+    monkeypatch.setattr(DiscoveryService, "get_devices", forbidden)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        volume = await http.post("/api/v1/fleet/volume", json={"level": 18})
+        assert volume.status_code == 200
+        mute = await http.post("/api/v1/fleet/mute", json={"mute": True})
+        assert mute.status_code == 200
+        stop = await http.post("/api/v1/fleet/stop")
+        assert stop.status_code == 200
+
+    assert client.set_volume.await_count == 2
+    assert client.set_mute.await_count == 2
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_fleet_mute_skips_offline_rooms(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    players = [
+        PlayerStatus(id="live", ip="192.168.1.10", name="Live", status="online"),
+        PlayerStatus(id="dead", ip="192.168.1.11", name="Dead", status="offline"),
+    ]
+    app, client, _, _ = await app_with_players(settings, monkeypatch, players=players)
+    client.set_mute = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        mute = await http.post("/api/v1/fleet/mute", json={"mute": True})
+        assert mute.status_code == 200
+        assert mute.json()["succeeded"] == 1
+        assert client.set_mute.await_count == 1
+        assert client.set_mute.await_args_list[0].args[0] == "192.168.1.10:11000"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_list_and_sync_reads_do_not_browse(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, client, discovery, _ = await app_with_players(settings, monkeypatch)
+    discovery._snapshot.discovered_at = 1.0
+
+    async def forbidden(*_args: object, **_kwargs: object):
+        raise AssertionError("reads must use the live snapshot")
+
+    monkeypatch.setattr(DiscoveryService, "get_devices", forbidden)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        devices = await http.get("/api/v1/devices")
+        assert devices.status_code == 200
+        assert devices.json()["devices"][0]["id"] == "player-kitchen"
+        sync = await http.get("/api/v1/sync")
+        assert sync.status_code == 200
+        firmware = await http.get("/api/v1/fleet/firmware")
+        assert firmware.status_code == 200
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_volume_interrupts_held_status_polls(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, client, _, poller = await app_with_players(settings, monkeypatch)
+    client.set_volume = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    interrupted: list[list[str]] = []
+
+    async def capture(device_ids: list[str]) -> None:
+        interrupted.append(list(device_ids))
+
+    monkeypatch.setattr(poller, "interrupt", capture)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        response = await http.post("/api/v1/fleet/volume", json={"level": 12})
+        assert response.status_code == 200
+    assert interrupted == [["player-kitchen"]]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_device_play_interrupts_held_status_polls(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, client, _, poller = await app_with_players(settings, monkeypatch)
+    client.play = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    interrupted: list[list[str]] = []
+
+    async def capture(device_ids: list[str]) -> None:
+        interrupted.append(list(device_ids))
+
+    monkeypatch.setattr(poller, "interrupt", capture)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        response = await http.post("/api/v1/devices/player-kitchen/play")
+        assert response.status_code == 204
+    assert interrupted == [["player-kitchen"]]
     await client.aclose()

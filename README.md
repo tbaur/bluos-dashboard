@@ -19,7 +19,7 @@ Related CLI: [bluos-controller](https://github.com/tbaur/bluos-controller). This
 - **Multi-room** — create groups, add/remove followers, group all free rooms under a lead, ungroup one set or all. Break-all also clears orphans whose primary left the network.
 - **Per player** — queue (loaded on open, optimistic reorder), inputs / presets / Bluetooth / settings when Advanced is opened, diagnostics (uptime from the device web UI), 12-hour presence bar and last drop, reboot. Leaving the page aborts diagnostics and upgrade scrapes so Skip and queue moves are not starved by the browser’s six connections per host.
 - **House page** — same remote, poller drop history for **this dashboard process** (24h, not persisted), firmware inventory + upgrade check, reboot all, ungroup all.
-- **Discovery** — on load, on rescan, and automatic re-scan when the fleet is empty. mDNS browses `_musc` and `_musp` (CI secondary zones as `ip:port`).
+- **Discovery** — at process start, on **Rescan**, and on the poller clock when the fleet is empty or the discovery cache expires. Page load and house mute/volume read the live snapshot (no mDNS). mDNS browses `_musc` and `_musp` (CI secondary zones as `ip:port`).
 - **Live updates** — per-player BluOS Status etag long-poll (holds until skip, volume, track, or grouping changes; `/SyncStatus` when `<syncStat>` moves) plus SSE. Seek interpolates between snaps. REST fallback if the stream drops.
 
 Ops (health, logs, LAN bind): [docs/RUNBOOK.md](docs/RUNBOOK.md).

@@ -10,6 +10,7 @@ from fastapi import APIRouter
 
 from app.api.common import (
     StateDep,
+    begin_control,
     chassis_representatives,
     endpoint_host,
     fleet_action,
@@ -45,22 +46,19 @@ async def fleet_health(state: StateDep) -> FleetHealthResponse:
 @router.post("/fleet/volume", response_model=FleetVolumeResponse)
 async def set_fleet_volume(body: VolumeRequest, state: StateDep) -> FleetVolumeResponse:
     """Set volume on discovered players (optionally filtered by ``device_ids``)."""
-    snapshot = await state.discovery.get_devices()
-    if not snapshot.devices:
-        raise AppError(404, "no_devices", "No discovered devices to control")
-
     if body.device_ids is not None:
         if not body.device_ids:
             raise AppError(400, "empty_device_ids", "device_ids must be omitted or non-empty")
-        wanted = set(body.device_ids)
-        for device_id in wanted:
+        for device_id in body.device_ids:
             if not validate_device_id(device_id):
                 raise AppError(400, "invalid_device_id", "Device id format is invalid")
-        targets = [d for d in snapshot.devices if d.id in wanted]
+        targets = state.discovery.control_devices(body.device_ids)
         if not targets:
             raise AppError(404, "no_devices", "No matching devices to control")
     else:
-        targets = snapshot.devices
+        targets = state.discovery.control_devices()
+        if not targets:
+            raise AppError(404, "no_devices", "No discovered devices to control")
 
     level = body.level
     default_port = state.settings.bluos_port
@@ -91,6 +89,7 @@ async def set_fleet_volume(body: VolumeRequest, state: StateDep) -> FleetVolumeR
             "scoped": bool(body.device_ids),
         },
     )
+    await begin_control(state, [device.id for device in targets])
     results = await asyncio.gather(
         *(set_one(d.id, d.name, d.endpoint) for d in targets)
     )
@@ -131,8 +130,7 @@ async def fleet_stop(state: StateDep) -> FleetActionResponse:
 @router.post("/fleet/reboot", response_model=FleetActionResponse)
 async def fleet_reboot(state: StateDep) -> FleetActionResponse:
     """Reboot each chassis once (device web UI POST /reboot yes=1)."""
-    snapshot = await state.discovery.get_devices()
-    targets = chassis_representatives(snapshot.devices)
+    targets = chassis_representatives(state.discovery.control_devices())
 
     async def run(endpoint: str) -> bool:
         return await state.client.reboot(endpoint)
@@ -141,7 +139,7 @@ async def fleet_reboot(state: StateDep) -> FleetActionResponse:
 
 @router.get("/fleet/firmware", response_model=FleetFirmwareResponse)
 async def fleet_firmware(state: StateDep) -> FleetFirmwareResponse:
-    snapshot = await state.discovery.get_devices()
+    snapshot = state.discovery.snapshot
     devices = [
         FirmwareEntry(
             device_id=d.id,
@@ -174,7 +172,7 @@ async def fleet_upgrades(state: StateDep) -> FleetUpgradeResponse:
         ):
             return cached
 
-        snapshot = await state.discovery.get_devices()
+        snapshot = state.discovery.snapshot
         if not snapshot.devices:
             empty = FleetUpgradeResponse(updates_available=0, checked=0, failed=0, results=[])
             state.fleet_upgrades_cache = empty

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
@@ -53,6 +54,7 @@ async def test_poll_once_updates_online_devices(
     player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
     discovery._snapshot.devices = [player]
     discovery._snapshot.ips_by_id = {"p1": "192.168.1.20"}
+    discovery._snapshot.discovered_at = time.time()
     events = EventBus()
     poller = StatusPoller(settings, discovery, client, events)
     published: list[tuple[str, object]] = []
@@ -90,6 +92,7 @@ async def test_poll_once_publishes_fleet_when_sync_graph_changes(
     player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
     discovery._snapshot.devices = [player]
     discovery._snapshot.ips_by_id = {"p1": "192.168.1.20"}
+    discovery._snapshot.discovered_at = time.time()
     events = EventBus()
     poller = StatusPoller(settings, discovery, client, events)
     published: list[tuple[str, object]] = []
@@ -129,6 +132,7 @@ async def test_poll_once_publishes_fleet_when_device_drops(
     player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
     discovery._snapshot.devices = [player]
     discovery._snapshot.ips_by_id = {"p1": "192.168.1.20"}
+    discovery._snapshot.discovered_at = time.time()
     events = EventBus()
     poller = StatusPoller(settings, discovery, client, events)
     published: list[tuple[str, object]] = []
@@ -158,6 +162,7 @@ async def test_poll_once_marks_exception_offline(
     player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
     discovery._snapshot.devices = [player]
     discovery._snapshot.ips_by_id = {"p1": "192.168.1.20"}
+    discovery._snapshot.discovered_at = time.time()
     events = EventBus()
     poller = StatusPoller(settings, discovery, client, events)
 
@@ -178,8 +183,6 @@ async def test_poll_once_marks_exception_offline(
 
 @pytest.mark.asyncio
 async def test_circuit_breaker_slows_poll(settings: Settings) -> None:
-    import time
-
     client = BluOSClient(settings)
     discovery = DiscoveryService(settings, client)
     events = EventBus()
@@ -210,7 +213,7 @@ async def test_empty_fleet_triggers_refresh(
         return self._snapshot
 
     monkeypatch.setattr(DiscoveryService, "refresh", refresh)
-    await poller._poll_once()
+    await poller._maybe_rediscover()
     assert called["n"] == 1
     await client.aclose()
 
@@ -267,6 +270,7 @@ async def test_stop_cancels_watchers_stuck_in_a_long_poll(
     player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
     discovery._snapshot.devices = [player]
     discovery._snapshot.ips_by_id = {"p1": "192.168.1.20"}
+    discovery._snapshot.discovered_at = time.time()
     events = EventBus()
     poller = StatusPoller(settings, discovery, client, events)
 
@@ -286,9 +290,121 @@ async def test_stop_cancels_watchers_stuck_in_a_long_poll(
     monkeypatch.setattr(discovery, "get_devices", seeded)
 
     poller.start()
-    await asyncio.wait_for(entered.wait(), timeout=5)
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        await asyncio.wait_for(poller.stop(), timeout=5)
+        assert poller.running is False
+        assert not poller._watchers
+    finally:
+        if poller.running:
+            await poller.stop()
+        await client.aclose()
 
-    await asyncio.wait_for(poller.stop(), timeout=5)
-    assert poller.running is False
-    assert not poller._watchers
+
+@pytest.mark.asyncio
+async def test_interrupt_cancels_long_poll_without_marking_offline(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.ips_by_id = {"p1": "192.168.1.20"}
+    discovery._snapshot.discovered_at = time.time()
+    events = EventBus()
+    poller = StatusPoller(settings, discovery, client, events)
+    entered = asyncio.Event()
+
+    async def held(_target: str, **_kwargs: object) -> PlayerSnapshot:
+        entered.set()
+        await asyncio.sleep(3600)
+        raise AssertionError("long-poll should have been cancelled")
+
+    monkeypatch.setattr(client, "load_player", held)
+    poller.start()
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        await poller.interrupt(["p1"])
+        # Watcher restarts a new long-poll; the room must not flip offline.
+        assert discovery.snapshot.devices[0].status == "online"
+    finally:
+        await poller.stop()
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_holds_off_the_next_long_poll(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = settings.model_copy(
+        update={"long_poll_gap_seconds": 0.35, "control_interrupt_wait_seconds": 0.05}
+    )
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.ips_by_id = {"p1": "192.168.1.20"}
+    discovery._snapshot.discovered_at = time.time()
+    events = EventBus()
+    poller = StatusPoller(settings, discovery, client, events)
+    calls = {"n": 0}
+    entered = asyncio.Event()
+
+    async def held(_target: str, **_kwargs: object) -> PlayerSnapshot:
+        calls["n"] += 1
+        entered.set()
+        await asyncio.sleep(3600)
+        raise AssertionError("long-poll should have been cancelled")
+
+    monkeypatch.setattr(client, "load_player", held)
+    poller.start()
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        assert calls["n"] == 1
+        await poller.interrupt(["p1"])
+        await asyncio.sleep(0.12)
+        assert calls["n"] == 1
+        await asyncio.sleep(0.35)
+        assert calls["n"] == 2
+    finally:
+        await poller.stop()
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_without_inflight_is_a_noop(settings: Settings) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    events = EventBus()
+    poller = StatusPoller(settings, discovery, client, events)
+    await poller.interrupt(["missing"])
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_stale_fleet_rediscovers_on_poller_not_on_request(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.discovered_at = 1.0
+    events = EventBus()
+    poller = StatusPoller(settings, discovery, client, events)
+    called = {"n": 0}
+
+    async def refresh(self: DiscoveryService) -> object:
+        called["n"] += 1
+        self._snapshot.discovered_at = time.time()
+        return self._snapshot
+
+    monkeypatch.setattr(DiscoveryService, "refresh", refresh)
+    await poller._maybe_rediscover()
+    assert called["n"] == 1
+    await poller._maybe_rediscover()
+    assert called["n"] == 1
     await client.aclose()

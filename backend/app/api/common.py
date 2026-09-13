@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated
 
 from fastapi import Depends, Response, status
@@ -145,12 +145,18 @@ async def drain_pending_refreshes() -> None:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
+async def begin_control(state: AppState, device_ids: Sequence[str]) -> None:
+    """Free held Status long-polls before a command hits the same players."""
+    await state.poller.interrupt(device_ids)
+
+
 async def run_control(state: AppState, device_id: str, op_name: str, coro: ControlOp) -> Response:
     ip = require_device(state, device_id)
     logger.info(
         "control_op",
         extra={"op": op_name, "device_id": device_id, "device_ip": ip},
     )
+    await begin_control(state, [device_id])
     ok = await coro(ip)
     if not ok:
         logger.warning(
@@ -171,11 +177,11 @@ async def fleet_action(
 ) -> FleetActionResponse:
     """Run a BluOS (or chassis) control against each target endpoint."""
     if devices is None:
-        snapshot = await state.discovery.get_devices()
-        devices = snapshot.devices
+        devices = state.discovery.control_devices()
     if not devices:
         raise AppError(404, "no_devices", "No discovered devices to control")
 
+    await begin_control(state, [device.id for device in devices])
     default_port = state.settings.bluos_port
 
     async def one(device_id: str, name: str, endpoint: str) -> FleetVolumeResult:
@@ -240,6 +246,7 @@ async def clear_playback_after_leave(
     slave_ip: str,
 ) -> None:
     """Stop freed players so leftover AirPlay/capture sessions do not linger."""
+    await begin_control(state, [master_id, slave_id])
     slave_stopped = await state.client.stop(slave_ip)
     if not slave_stopped:
         logger.warning(

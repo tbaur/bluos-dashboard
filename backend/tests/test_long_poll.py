@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 import httpx
 import pytest
@@ -49,6 +50,7 @@ def _poller(settings: Settings, client: BluOSClient) -> tuple[StatusPoller, Disc
     player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
     discovery._snapshot.devices = [player]
     discovery._snapshot.ips_by_id = {"p1": "192.168.1.20:11000"}
+    discovery._snapshot.discovered_at = time.time()
     return StatusPoller(settings, discovery, client, EventBus()), discovery
 
 
