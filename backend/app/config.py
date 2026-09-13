@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     long_poll_gap_seconds: float = Field(default=1.0, ge=0.0, le=10.0)
     max_concurrent_device_calls: int = Field(default=20, ge=1, le=50)
     control_rate_limit_seconds: float = Field(default=0.1, ge=0.0, le=5.0)
+    # Bound wait after cancelling a Status long-poll so control can use the player.
+    control_interrupt_wait_seconds: float = Field(default=0.25, ge=0.0, le=2.0)
     api_rate_limit_seconds: float = Field(default=0.05, ge=0.0, le=5.0)
 
     enable_openapi: bool | None = None

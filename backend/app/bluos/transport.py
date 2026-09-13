@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 _MAX_REDIRECTS = 5
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+# Idle control sockets stay warm across a mute/volume session. Long-polls are
+# in-use and do not use this expiry.
+_CONTROL_KEEPALIVE_EXPIRY_SECONDS = 60.0
 
 
 class BluOSTransport:
@@ -32,7 +35,11 @@ class BluOSTransport:
         self._client = client or httpx.AsyncClient(
             timeout=settings.device_http_timeout,
             follow_redirects=False,
-            limits=httpx.Limits(max_connections=pool + 16, max_keepalive_connections=pool),
+            limits=httpx.Limits(
+                max_connections=pool + 16,
+                max_keepalive_connections=pool,
+                keepalive_expiry=_CONTROL_KEEPALIVE_EXPIRY_SECONDS,
+            ),
         )
         self._rate = RateLimiter(settings.control_rate_limit_seconds)
         self._sem = asyncio.Semaphore(settings.max_concurrent_device_calls)

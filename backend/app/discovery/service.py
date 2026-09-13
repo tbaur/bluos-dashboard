@@ -115,6 +115,18 @@ class DiscoveryService:
                 return device
         return None
 
+    def control_devices(self, device_ids: list[str] | None = None) -> list[PlayerStatus]:
+        """Online players from the live snapshot. Never browses or re-enriches.
+
+        Offline rooms are omitted so a dead player cannot stall mute-all
+        behind ``BSD_DEVICE_HTTP_TIMEOUT``.
+        """
+        devices = list(self._snapshot.devices)
+        if device_ids is not None:
+            by_id = {device.id: device for device in devices}
+            devices = [by_id[device_id] for device_id in device_ids if device_id in by_id]
+        return [device for device in devices if device.status == "online"]
+
     def cache_fresh(self) -> bool:
         """True when the last discovery result (including empty) is still within TTL.
 

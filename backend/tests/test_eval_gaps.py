@@ -124,6 +124,35 @@ async def test_bluetooth_post_probe_fail_is_unsupported(
 
 
 @pytest.mark.asyncio
+async def test_bluetooth_post_interrupts_before_probe(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, client, _, poller = await app_with_players(settings, monkeypatch)
+    order: list[str] = []
+
+    async def interrupt(device_ids: list[str]) -> None:
+        order.append("interrupt")
+
+    async def probe(*_args: object, **_kwargs: object) -> BluetoothResponse:
+        order.append("probe")
+        return BluetoothResponse(supported=True, mode="Manual")
+
+    client.get_bluetooth_info = AsyncMock(side_effect=probe)  # type: ignore[method-assign]
+    client.set_bluetooth_mode = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    monkeypatch.setattr(poller, "interrupt", interrupt)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        response = await http.post(
+            "/api/v1/devices/player-kitchen/bluetooth",
+            json={"mode": 1},
+        )
+        assert response.status_code == 204
+    assert order[:2] == ["interrupt", "probe"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_sync_remove_resolves_orphan_primary_id(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:

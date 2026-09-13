@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from app.bluos.client import BluOSClient
@@ -34,6 +35,8 @@ class StatusPoller:
         self.health = HealthLog(circuit_threshold=settings.circuit_failure_threshold)
         self._task: asyncio.Task[None] | None = None
         self._watchers: dict[str, asyncio.Task[None]] = {}
+        self._in_flight: dict[str, asyncio.Task[PlayerSnapshot]] = {}
+        self._control_holdoff_until: dict[str, float] = {}
         self._stop = asyncio.Event()
         self._failures: dict[str, int] = {}
         self._next_due: dict[str, float] = {}
@@ -89,6 +92,38 @@ class StatusPoller:
         await self.events.publish("device", snap.player.model_dump())
         return snap.player
 
+    async def interrupt(self, device_ids: Sequence[str]) -> None:
+        """Drop held Status long-polls so a control request can use the player.
+
+        Cancelling the in-flight read closes that socket. The player can then
+        accept ``/Volume`` or ``/Skip`` instead of queueing behind a 100s hold.
+        Interrupt is not a poll failure — the room stays online.
+        """
+        now = time.monotonic()
+        hold_until = now + self.settings.long_poll_gap_seconds
+        tasks: list[asyncio.Task[PlayerSnapshot]] = []
+        for device_id in device_ids:
+            # Stamp the v1.7 Status gap from *this* cancel. The previous cycle
+            # set _last_status_at at hold start, so the watcher would otherwise
+            # open a new 100s poll before /Volume runs.
+            self._last_status_at[device_id] = now
+            self._control_holdoff_until[device_id] = hold_until
+            task = self._in_flight.get(device_id)
+            if task is not None and not task.done():
+                tasks.append(task)
+        for task in tasks:
+            task.cancel()
+        wait = self.settings.control_interrupt_wait_seconds
+        if not tasks or wait <= 0:
+            return
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=wait,
+            )
+        except asyncio.TimeoutError:
+            logger.debug("control_interrupt_wait_timeout count=%s", len(tasks))
+
     async def _run(self) -> None:
         while not self._stop.is_set():
             try:
@@ -104,7 +139,7 @@ class StatusPoller:
             await self._sleep(wait)
 
     async def _reconcile(self) -> None:
-        await self._refresh_empty_fleet()
+        await self._maybe_rediscover()
         live_ids = {device.id for device in self.discovery.snapshot.devices}
         for device_id, task in list(self._watchers.items()):
             if device_id not in live_ids or task.done():
@@ -120,17 +155,15 @@ class StatusPoller:
                     name=f"watch-{device.id}",
                 )
 
-    async def _refresh_empty_fleet(self) -> None:
-        snapshot = self.discovery.snapshot
-        if snapshot.devices:
+    async def _maybe_rediscover(self) -> None:
+        """Browse the LAN on the poller clock, never on a mute or volume key."""
+        if self.discovery.cache_fresh():
             return
-        stale = (
-            snapshot.discovered_at is None
-            or (time.time() - snapshot.discovered_at)
-            >= self.settings.empty_fleet_rediscovery_seconds
-        )
-        if stale:
-            await self.discovery.refresh()
+        now = time.monotonic()
+        if any(until > now for until in self._control_holdoff_until.values()):
+            return
+        await self.discovery.refresh()
+        await self.events.publish("fleet", self.fleet_payload())
 
     async def _watch_device(self, device_id: str) -> None:
         while not self._stop.is_set():
@@ -146,8 +179,7 @@ class StatusPoller:
                 await self._sleep(self.settings.poll_interval)
 
     async def _poll_once(self) -> None:
-        """One sequential pass (tests). Production uses per-device watchers."""
-        await self._refresh_empty_fleet()
+        """One sequential status pass (tests). Production uses per-device watchers."""
         for device in list(self.discovery.snapshot.devices):
             await self._cycle_device(device)
 
@@ -164,6 +196,10 @@ class StatusPoller:
         fleet_before = self._fleet_signature()
         try:
             snap = await self._fetch_snapshot(device)
+        except asyncio.CancelledError:
+            if self._stop.is_set():
+                raise
+            return
         except Exception as exc:
             player = self._apply_poll_result(device, exc)
             self._forget_tags(device.id)
@@ -190,6 +226,23 @@ class StatusPoller:
         )
 
     async def _fetch_snapshot(self, device: PlayerStatus) -> PlayerSnapshot:
+        task = asyncio.create_task(
+            self._load_player(device),
+            name=f"status-{device.id}",
+        )
+        self._in_flight[device.id] = task
+        try:
+            return await task
+        except asyncio.CancelledError:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            raise
+        finally:
+            if self._in_flight.get(device.id) is task:
+                self._in_flight.pop(device.id, None)
+
+    async def _load_player(self, device: PlayerStatus) -> PlayerSnapshot:
         etag = self._status_etags.get(device.id)
         wait = self.settings.status_long_poll_seconds if etag else None
         return await self.client.load_player(
@@ -250,8 +303,12 @@ class StatusPoller:
         self._sync_stats.pop(device_id, None)
 
     def _forget_device(self, device_id: str) -> None:
+        inflight = self._in_flight.pop(device_id, None)
+        if inflight is not None and not inflight.done():
+            inflight.cancel()
         self._forget_tags(device_id)
         self._last_status_at.pop(device_id, None)
+        self._control_holdoff_until.pop(device_id, None)
         self._failures.pop(device_id, None)
         self._next_due.pop(device_id, None)
         self.health.forget(device_id)
@@ -269,10 +326,13 @@ class StatusPoller:
         await self._sleep(due - time.monotonic())
 
     async def _wait_gap(self, device_id: str) -> None:
+        now = time.monotonic()
         last = self._last_status_at.get(device_id)
-        if last is None:
-            return
-        await self._sleep(self.settings.long_poll_gap_seconds - (time.monotonic() - last))
+        gap_until = (
+            last + self.settings.long_poll_gap_seconds if last is not None else 0.0
+        )
+        hold_until = self._control_holdoff_until.get(device_id, 0.0)
+        await self._sleep(max(gap_until, hold_until) - now)
 
     async def _sleep(self, seconds: float) -> None:
         if seconds <= 0 or self._stop.is_set():

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Path, Response
 
 from app.api.common import (
     StateDep,
+    begin_control,
     bluetooth_unsupported_by_model,
     require_device,
     run_control,
@@ -40,7 +41,7 @@ router = APIRouter()
 
 @router.get("/devices", response_model=DevicesResponse)
 async def list_devices(state: StateDep) -> DevicesResponse:
-    snapshot = await state.discovery.get_devices()
+    snapshot = state.discovery.snapshot
     return DevicesResponse(
         devices=snapshot.devices,
         discovered_at=snapshot.discovered_at,
@@ -113,6 +114,7 @@ async def toggle(device_id: str, state: StateDep) -> Response:
 async def volume_adjust(device_id: str, body: VolumeAdjustRequest, state: StateDep) -> Response:
     ip = require_device(state, device_id)
     # Prefer live SyncStatus volume — cached fleet snapshot can lag concurrent nudges.
+    await begin_control(state, [device_id])
     live = await state.client.get_player_status(ip, device_id=device_id)
     cached = state.discovery.get_device(device_id)
     if live.status == "online":
@@ -331,6 +333,7 @@ async def set_bluetooth(device_id: str, body: BluetoothRequest, state: StateDep)
     ip = require_device(state, device_id)
     if bluetooth_unsupported_by_model(state, device_id):
         raise AppError(404, "bluetooth_unsupported", "This player does not support Bluetooth")
+    await begin_control(state, [device_id])
     info = await state.client.get_bluetooth_info(ip)
     if info is None or not info.supported:
         raise AppError(404, "bluetooth_unsupported", "This player does not support Bluetooth")

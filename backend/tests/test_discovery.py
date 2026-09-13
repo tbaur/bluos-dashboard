@@ -11,6 +11,21 @@ from app.models import PlayerStatus
 
 
 @pytest.mark.asyncio
+async def test_control_devices_is_the_live_snapshot() -> None:
+    settings = Settings(allow_non_private_ips=True, discovery_cache_ttl=0)
+    client = BluOSClient(settings)
+    service = DiscoveryService(settings, client)
+    online = PlayerStatus(id="a", ip="192.168.1.10", name="A", status="online")
+    offline = PlayerStatus(id="b", ip="192.168.1.11", name="B", status="offline")
+    service._snapshot.devices = [online, offline]
+    assert service.control_devices() == [online]
+    assert service.control_devices(["a"]) == [online]
+    assert service.control_devices(["b"]) == []
+    assert service.control_devices() is not service._snapshot.devices
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_discovery_enrich_uses_client(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(allow_non_private_ips=True, discovery_cache_ttl=0)
     client = BluOSClient(settings)

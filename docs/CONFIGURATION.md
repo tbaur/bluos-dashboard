@@ -49,8 +49,8 @@ These are read by `scripts/run` only, not by the API.
 |----------|---------|---------|
 | `BSD_DISCOVERY_METHOD` | `both` | `mdns`, `lsdp`, or `both` (merge) |
 | `BSD_DISCOVERY_TIMEOUT` | `5` | Discovery window (seconds) |
-| `BSD_DISCOVERY_CACHE_TTL` | `300` | Cache TTL for **non-empty** discovery results |
-| `BSD_EMPTY_FLEET_REDISCOVERY_SECONDS` | `30` | Cache/re-scan interval when the fleet is empty (API + poller; avoids mDNS storms) |
+| `BSD_DISCOVERY_CACHE_TTL` | `300` | How often the **poller** re-browses a non-empty fleet. Mute/volume/skip use the live snapshot and never wait on this window |
+| `BSD_EMPTY_FLEET_REDISCOVERY_SECONDS` | `30` | How often the **poller** re-browses when the fleet is empty. `GET /devices` does not scan; use **Rescan** for an on-demand browse |
 | `BSD_DISCOVERED_GRACE_TTL` | `60` | Control grace after a player drops from discovery |
 | `BSD_SSE_KEEPALIVE_SECONDS` | `15` | SSE keepalive interval |
 | `BSD_SSE_QUEUE_SIZE` | `32` | Per-subscriber SSE queue size (drop-oldest under backpressure) |
@@ -74,7 +74,9 @@ NAD CI multi-zone chassis expose each zone as its own BluOS endpoint (often `:11
 
 ## Polling and device HTTP
 
-Each online player has a Status etag long-poll (Custom Integration API v1.7). The connection is held until playback/volume/grouping changes or `BSD_STATUS_LONG_POLL_SECONDS` elapses. `secs` is interpolated in the UI and does not wake the poll. `/SyncStatus` is fetched when Status `<syncStat>` changes (required for per-follower volume). Long-polls do not take a `BSD_MAX_CONCURRENT_DEVICE_CALLS` slot, so Skip/volume stay responsive while Status is held. Connect failures still use `BSD_DEVICE_HTTP_TIMEOUT` so a powered-off player is not waited out for 100s.
+Each online player has a Status etag long-poll (Custom Integration API v1.7). The connection is held until playback/volume/grouping changes or `BSD_STATUS_LONG_POLL_SECONDS` elapses. `secs` is interpolated in the UI and does not wake the poll. `/SyncStatus` is fetched when Status `<syncStat>` changes (required for per-follower volume). Long-polls do not take a `BSD_MAX_CONCURRENT_DEVICE_CALLS` slot. A house or per-player control cancels that held read (waits up to `BSD_CONTROL_INTERRUPT_WAIT_SECONDS`) so `/Volume` and `/Skip` are not queued behind the 100s hold. Offline rooms are omitted from mute-all / volume-all so a dead player cannot stall the rest behind `BSD_DEVICE_HTTP_TIMEOUT`. Connect failures still use `BSD_DEVICE_HTTP_TIMEOUT` so a powered-off player is not waited out for 100s.
+
+Discovery (mDNS/LSDP + enrich) runs at startup, on **Rescan**, when the fleet is empty (`BSD_EMPTY_FLEET_REDISCOVERY_SECONDS`), and in the poller when `BSD_DISCOVERY_CACHE_TTL` expires. `GET /devices`, `GET /sync`, and house control read the in-memory snapshot.
 
 Drop history (`GET /api/v1/fleet/health`, House page Health, player 12-hour presence) is **in-memory for this process** — it resets when the dashboard restarts. A miss only counts as a drop after that player was seen online. Device `:80/diagnostics` and `/upgrade` are not in the poll loop; the player page aborts those scrapes on leave so they cannot starve Skip.
 
@@ -87,6 +89,7 @@ Drop history (`GET /api/v1/fleet/health`, House page Health, player 12-hour pres
 | `BSD_DEVICE_HTTP_TIMEOUT` | `3` | Connect/control HTTP timeout (long-poll read timeout is separate) |
 | `BSD_MAX_CONCURRENT_DEVICE_CALLS` | `20` | Cap concurrent BluOS HTTP calls |
 | `BSD_CONTROL_RATE_LIMIT_SECONDS` | `0.1` | Per **device endpoint** (`ip:port`) spacing for outbound BluOS control and web-UI writes |
+| `BSD_CONTROL_INTERRUPT_WAIT_SECONDS` | `0.25` | Max wait after cancelling a Status long-poll before the control HTTP call proceeds |
 | `BSD_API_RATE_LIMIT_SECONDS` | `0.05` | Minimum spacing per **HTTP client IP + method + path** for mutating API requests and expensive GETs (`/api/v1/fleet/upgrades`). Excess requests return **429** (they do not wait). Cheap in-memory GETs such as `/api/v1/devices` and `/api/v1/sync` are not throttled so overlapping UI loads (mount, Strict Mode, in-flight reload) cannot fail. Outbound BluOS control still uses sleep-based spacing (`BSD_CONTROL_RATE_LIMIT_SECONDS`). Behind a reverse proxy, set `BSD_TRUSTED_PROXIES` so `X-Forwarded-For` is honored |
 | `BSD_CIRCUIT_FAILURE_THRESHOLD` | `5` | Failures before slow-poll |
 | `BSD_CIRCUIT_SLOW_POLL_SECONDS` | `15` | Slow-poll interval after circuit open |

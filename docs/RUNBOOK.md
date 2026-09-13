@@ -67,6 +67,7 @@ Vite proxies `/api` → the API. CORS defaults allow both `http://127.0.0.1:8765
 | `device_not_found` on control | Player dropped off discovery (grace expired) | Rescan network; check `BSD_DISCOVERED_GRACE_TTL` |
 | Rooms stuck “synced” / reconnecting after primary power-off | Orphan group (primary offline) | **Ungroup** / **Ungroup all** / House **Break all groups** — backend reparents onto a live donor then removes |
 | Add rooms disabled on “Offline primary” | Expected — membership changes need a live primary | Ungroup orphans, then form a new group under an online lead |
+| First mute/volume after idle feels slow | Old process still re-browses the LAN on house control | Restart this release — house actions use the live snapshot and drop the held Status poll first |
 | One player stuck offline | Circuit slow-poll after consecutive long-poll/connect failures | Power-cycle player; wait for `BSD_CIRCUIT_SLOW_POLL_SECONDS` |
 | House Health empty after restart | Drop history is process-local (not on disk) | Expected — first online in this process starts the 12h presence bar |
 | `Request timed out` on Skip or queue Down from a player page | Browser allows six HTTP/1.1 connections per host; diagnose/upgrade/SSE were holding slots | Leave the page (scrapes abort). Current UI loads queue on open and Advanced extras lazily |

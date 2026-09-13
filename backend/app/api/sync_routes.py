@@ -10,6 +10,7 @@ from fastapi import APIRouter, Response, status
 from app.api.common import (
     StateDep,
     allow_master_endpoint,
+    begin_control,
     clear_playback_after_leave,
     require_device,
     resolve_sync_master,
@@ -33,8 +34,7 @@ router = APIRouter()
 
 @router.get("/sync", response_model=SyncState)
 async def sync_state(state: StateDep) -> SyncState:
-    snapshot = await state.discovery.get_devices()
-    return build_sync_state(snapshot.devices)
+    return build_sync_state(state.discovery.snapshot.devices)
 
 
 @router.post("/sync/add", status_code=204)
@@ -43,6 +43,7 @@ async def sync_add(body: SyncPairRequest, state: StateDep) -> Response:
     slave_ip = require_device(state, body.slave_id)
     if master_ip == slave_ip:
         raise AppError(400, "invalid_sync_pair", "Master and slave must differ")
+    await begin_control(state, [body.master_id, body.slave_id])
     logger.info(
         "control_op",
         extra={
@@ -67,7 +68,7 @@ async def sync_add(body: SyncPairRequest, state: StateDep) -> Response:
 async def sync_enable(body: SyncEnableRequest, state: StateDep) -> SyncEnableResponse:
     """Group all free (standalone) rooms under one primary — never steal from existing groups."""
     primary_ip = require_device(state, body.primary_id)
-    snapshot = await state.discovery.get_devices()
+    snapshot = state.discovery.snapshot
     sync = build_sync_state(snapshot.devices)
     free_ids = set(sync.standalone_ids)
     if body.primary_id not in free_ids and not any(
@@ -79,7 +80,7 @@ async def sync_enable(body: SyncEnableRequest, state: StateDep) -> SyncEnableRes
     slaves = [
         by_id[sid]
         for sid in sorted(free_ids)
-        if sid != body.primary_id and sid in by_id
+        if sid != body.primary_id and sid in by_id and by_id[sid].status == "online"
     ]
     if not slaves:
         raise AppError(400, "no_slaves", "No free players to group under the primary")
@@ -87,6 +88,7 @@ async def sync_enable(body: SyncEnableRequest, state: StateDep) -> SyncEnableRes
         "control_op",
         extra={"op": "sync_enable", "device_id": body.primary_id, "device_ip": primary_ip},
     )
+    await begin_control(state, [body.primary_id, *(slave.id for slave in slaves)])
 
     async def link_slave(slave: PlayerStatus) -> FleetVolumeResult:
         ok = await state.client.add_sync_slave(primary_ip, slave.endpoint)
@@ -115,6 +117,7 @@ async def sync_remove(body: SyncPairRequest, state: StateDep) -> Response:
     slave_ip = require_device(state, body.slave_id)
     master_ip = resolve_sync_master(state, body.master_id, body.slave_id)
     donors = sync_donor_endpoints(state, master_ip, slave_ip)
+    await begin_control(state, [body.master_id, body.slave_id])
     logger.info(
         "control_op",
         extra={"op": "sync_remove", "device_id": body.master_id, "device_ip": master_ip},
@@ -149,8 +152,16 @@ async def sync_break(state: StateDep) -> FleetActionResponse:
     Partial success returns succeeded/failed counts (502 only when every link fails).
     """
     logger.info("control_op", extra={"op": "sync_break", "device_id": "-", "device_ip": "-"})
-    snapshot = await state.discovery.get_devices()
+    snapshot = state.discovery.snapshot
     sync = build_sync_state(snapshot.devices)
+    interrupt_ids = [
+        group.primary_id
+        for group in sync.groups
+        if not is_orphan_primary_id(group.primary_id)
+    ]
+    for group in sync.groups:
+        interrupt_ids.extend(group.slave_ids)
+    await begin_control(state, interrupt_ids)
     link_results: list[FleetVolumeResult] = []
     slave_stops: list[tuple[str, str]] = []
     primary_stops: list[tuple[str, str]] = []

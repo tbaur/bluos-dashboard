@@ -96,6 +96,41 @@ async def test_device_volume_mute_adjust(
 
 
 @pytest.mark.asyncio
+async def test_volume_adjust_interrupts_before_live_status(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, client, _, poller = await app_with_players(settings, monkeypatch)
+    order: list[str] = []
+
+    async def interrupt(device_ids: list[str]) -> None:
+        order.append("interrupt")
+
+    async def status(*_args: object, **_kwargs: object) -> PlayerStatus:
+        order.append("status")
+        return PlayerStatus(
+            id="player-kitchen",
+            ip="192.168.1.20",
+            name="Kitchen",
+            status="online",
+            volume=20,
+        )
+
+    client.get_player_status = AsyncMock(side_effect=status)  # type: ignore[method-assign]
+    client.adjust_volume = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    monkeypatch.setattr(poller, "interrupt", interrupt)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        response = await http.post(
+            "/api/v1/devices/player-kitchen/volume/adjust",
+            json={"delta": 1},
+        )
+        assert response.status_code == 204
+    assert order[:2] == ["interrupt", "status"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_control_failure_returns_502(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -437,6 +472,48 @@ async def test_sync_add_enable_and_get(settings: Settings, monkeypatch: pytest.M
         assert body["succeeded"] >= 1
         assert body["failed"] == 0
         assert client.add_sync_slave.await_count >= 2
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_sync_enable_skips_offline_standalones(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    players = [
+        PlayerStatus(
+            id="primary",
+            ip="192.168.1.10",
+            name="Living",
+            status="online",
+            sync_role=SyncRole.STANDALONE,
+        ),
+        PlayerStatus(
+            id="live-slave",
+            ip="192.168.1.11",
+            name="Kitchen",
+            status="online",
+            sync_role=SyncRole.STANDALONE,
+        ),
+        PlayerStatus(
+            id="dead-slave",
+            ip="192.168.1.12",
+            name="Office",
+            status="offline",
+            sync_role=SyncRole.STANDALONE,
+        ),
+    ]
+    app, client, _, poller = await app_with_players(settings, monkeypatch, players=players)
+    client.add_sync_slave = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    poller.refresh_one = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        enable = await http.post("/api/v1/sync/enable", json={"primary_id": "primary"})
+        assert enable.status_code == 200
+        assert enable.json()["succeeded"] == 1
+        assert enable.json()["failed"] == 0
+        assert client.add_sync_slave.await_count == 1
+        assert client.add_sync_slave.await_args_list[0].args[1] == "192.168.1.11:11000"
     await client.aclose()
 
 
