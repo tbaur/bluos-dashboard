@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.3](https://github.com/tbaur/bluos-dashboard/compare/v1.0.2...v1.0.3) (2026-09-13)
+
+
+### Bug Fixes
+
+* keep house mute and volume on the live control path ([d959640](https://github.com/tbaur/bluos-dashboard/commit/d95964025d2954b7d741997059f669be04a8a64f))
+
 ## [1.0.2](https://github.com/tbaur/bluos-dashboard/compare/v1.0.1...v1.0.2) (2026-09-11)
 
 
