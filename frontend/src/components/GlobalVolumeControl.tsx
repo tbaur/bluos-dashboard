@@ -202,20 +202,20 @@ function GroupVolumePanel({
 /** Now-playing house remote (hero) + grouped volume sliders. */
 export function FleetBar() {
   const devices = useFleetStore((s) => s.devices);
-  const { residential, ciS2 } = useMemo(() => partitionVolumeGroups(devices), [devices]);
+  const { bluesound, ciS2 } = useMemo(() => partitionVolumeGroups(devices), [devices]);
   if (devices.length === 0) return null;
-  const hasVolumes = residential.length > 0 || ciS2.length > 0;
+  const hasVolumes = bluesound.length > 0 || ciS2.length > 0;
 
   return (
     <div className={hasVolumes ? 'fleet-bar' : 'fleet-bar fleet-bar-remote-only'}>
       <HouseRemote variant="fleet" />
       {hasVolumes ? (
         <div className="fleet-bar-rail">
-          {residential.length > 0 ? (
+          {bluesound.length > 0 ? (
             <GroupVolumePanel
               title="Bluesound"
               scopeLabel="Bluesound"
-              devices={residential}
+              devices={bluesound}
               inputId="global-vol"
               ariaLabel="Set volume on Bluesound players"
             />

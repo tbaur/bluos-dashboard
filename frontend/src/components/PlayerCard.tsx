@@ -1,7 +1,7 @@
 import { Link } from 'react-router';
 import { api } from '@/api/client';
 import type { PlayerStatus } from '@/api/types';
-import { isCiS2Device } from '@/lib/deviceGroups';
+import { volumePeerGroup } from '@/lib/deviceGroups';
 import {
   deviceEndpoint,
   endpointsMatch,
@@ -56,10 +56,11 @@ export function PlayerRow({ device }: { device: PlayerStatus }) {
   const [dragVolume, setDragVolume] = useState<number | null>(null);
   const displayVolume = dragVolume ?? device.volume;
 
+  const peerGroup = volumePeerGroup(device);
   const volumePeers = useMemo(() => {
-    const s2 = isCiS2Device(device);
-    return devices.filter((d) => isCiS2Device(d) === s2);
-  }, [device, devices]);
+    if (peerGroup === 'independent') return [device];
+    return devices.filter((d) => volumePeerGroup(d) === peerGroup);
+  }, [device, devices, peerGroup]);
   const volumesLinked =
     volumePeers.length > 1 && volumePeers.every((d) => d.volume === volumePeers[0].volume);
   const role = displaySyncRole(device, sync);
@@ -256,7 +257,7 @@ export function PlayerRow({ device }: { device: PlayerStatus }) {
           <span
             className="volume-linked"
             title={
-              isCiS2Device(device)
+              peerGroup === 'ci-s2'
                 ? 'NAD CI S2 players share this volume'
                 : 'Bluesound players share this volume'
             }

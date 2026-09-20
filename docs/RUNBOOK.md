@@ -64,6 +64,7 @@ Vite proxies `/api` → the API. CORS defaults allow both `http://127.0.0.1:8765
 | Empty fleet | Discovery blocked (VPN/firewall) or no players | Wait for empty-fleet rediscovery (`BSD_EMPTY_FLEET_REDISCOVERY_SECONDS`); Rescan; try `BSD_DISCOVERY_METHOD=lsdp` |
 | Missing CI secondary zones | LSDP-only discovery (chassis/primary port) | Use `mdns` or `both` so `_musp` SRV ports (`11010+`) are found |
 | CI zones too loud/quiet vs Nodes when using one slider | Different amp volume scales | Use **NAD CI S2** for the CI chassis and **Bluesound** for Nodes/Pulse — they are separate |
+| NAD C658 jumps to 0 when house volume is 20 | C658 analog floor is ~40; it is not a bluesound.com device | Set C658 volume on its player row; Bluesound slider is Pulse/Node only |
 | `device_not_found` on control | Player dropped off discovery (grace expired) | Rescan network; check `BSD_DISCOVERED_GRACE_TTL` |
 | Rooms stuck “synced” / reconnecting after primary power-off | Orphan group (primary offline) | **Ungroup** / **Ungroup all** / House **Break all groups** — backend reparents onto a live donor then removes |
 | Add rooms disabled on “Offline primary” | Expected — membership changes need a live primary | Ungroup orphans, then form a new group under an online lead |
