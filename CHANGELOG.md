@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.5](https://github.com/tbaur/bluos-dashboard/compare/v1.0.4...v1.0.5) (2026-09-20)
+
+
+### Bug Fixes
+
+* keep NAD players off the Bluesound house volume slider ([#88](https://github.com/tbaur/bluos-dashboard/issues/88)) ([77f5969](https://github.com/tbaur/bluos-dashboard/commit/77f5969f9d82aed51fc1208fbb3635ecbf906369))
+
 ## [1.0.4](https://github.com/tbaur/bluos-dashboard/compare/v1.0.3...v1.0.4) (2026-09-20)
 
 
