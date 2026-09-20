@@ -8,6 +8,7 @@ import {
   LIVE_HOUSE_SESSION,
   type HouseSession,
 } from '@/lib/houseSession';
+import { dropStaleFollowerClaims } from '@/lib/syncGraph';
 
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
@@ -37,7 +38,7 @@ interface FleetState {
   muteHoldUntil: Record<string, number>;
   houseSession: HouseSession;
   globalVolumeHoldUntil: number;
-  /** Ignore stale sync snapshots while BluOS catches up after AddSlave. */
+  /** Ignore stale sync snapshots while BluOS catches up after add or ungroup. */
   syncHoldUntil: number;
   /** Last non-zero volume per device — restored on unmute */
   lastAudibleVolume: Record<string, number>;
@@ -257,11 +258,11 @@ function prunedHolds(
 
 /** True when a sync snapshot is older than the group we optimistically painted. */
 function isStaleSync(state: FleetState, incoming: SyncState | null): boolean {
-  return (
-    Date.now() < state.syncHoldUntil &&
-    (state.sync?.groups.length ?? 0) > 0 &&
-    (incoming?.groups.length ?? 0) < (state.sync?.groups.length ?? 0)
-  );
+  if (Date.now() >= state.syncHoldUntil) return false;
+  const currentCount = state.sync?.groups.length ?? 0;
+  const incomingCount = incoming?.groups.length ?? 0;
+  if (currentCount > 0 && incomingCount < currentCount) return true;
+  return currentCount === 0 && incomingCount > 0;
 }
 
 /** Restore named fields from a pre-action snapshot so a failed write is undone. */
@@ -308,7 +309,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
 
   setFleet: (devices, discoveredAt = null) =>
     set((state) => ({
-      devices: mergedDeviceList(state, devices),
+      devices: dropStaleFollowerClaims(mergedDeviceList(state, devices), state.sync),
       ...prunedHolds(state, devices),
       discoveredAt: discoveredAt ?? state.discoveredAt,
       loading: false,
@@ -320,11 +321,10 @@ export const useFleetStore = create<FleetState>((set, get) => ({
       const previous = state.devices.find((d) => d.id === device.id);
       const merged = mergeRemoteDevice(device, previous, holdsOf(state, Date.now()));
       const exists = Boolean(previous);
-      return {
-        devices: exists
-          ? state.devices.map((d) => (d.id === device.id ? merged : d))
-          : [...state.devices, merged],
-      };
+      const nextDevices = exists
+        ? state.devices.map((d) => (d.id === device.id ? merged : d))
+        : [...state.devices, merged];
+      return { devices: dropStaleFollowerClaims(nextDevices, state.sync) };
     }),
 
   patchDevice: (deviceId, patch) =>
@@ -410,9 +410,13 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   setConnection: (connection) => set({ connection }),
   setSync: (sync) =>
     set((state) => {
-      // Drop stale sync while BluOS catches up after AddSlave (SSE often races ahead).
+      // Drop stale sync while BluOS catches up after add/ungroup (SSE often races).
       if (isStaleSync(state, sync)) return {};
-      return { sync, syncHoldUntil: 0 };
+      return {
+        sync,
+        syncHoldUntil: 0,
+        devices: dropStaleFollowerClaims(state.devices, sync),
+      };
     }),
   setHealth: (health) => set({ health }),
   setToast: (toast) => set({ toast }),
@@ -674,15 +678,19 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         api.getSync(),
         api.getFleetHealth().catch(() => get().health),
       ]);
-      set((state) => ({
-        devices: mergedDeviceList(state, fleet.devices),
-        ...prunedHolds(state, fleet.devices),
-        discoveredAt: fleet.discovered_at,
-        discoveryMethod: fleet.discovery_method,
-        ...(isStaleSync(state, sync) ? {} : { sync, syncHoldUntil: 0 }),
-        health: health ?? state.health,
-        loading: false,
-      }));
+      set((state) => {
+        const stale = isStaleSync(state, sync);
+        const nextSync = stale ? state.sync : sync;
+        return {
+          devices: dropStaleFollowerClaims(mergedDeviceList(state, fleet.devices), nextSync),
+          ...prunedHolds(state, fleet.devices),
+          discoveredAt: fleet.discovered_at,
+          discoveryMethod: fleet.discovery_method,
+          ...(stale ? {} : { sync, syncHoldUntil: 0 }),
+          health: health ?? state.health,
+          loading: false,
+        };
+      });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Failed to load devices';
       set({ loading: false, error: message });
@@ -697,15 +705,19 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         api.getSync(),
         api.getFleetHealth().catch(() => get().health),
       ]);
-      set((state) => ({
-        devices: mergedDeviceList(state, fleet.devices),
-        ...prunedHolds(state, fleet.devices),
-        discoveredAt: fleet.discovered_at,
-        discoveryMethod: fleet.discovery_method,
-        ...(isStaleSync(state, sync) ? {} : { sync, syncHoldUntil: 0 }),
-        health: health ?? state.health,
-        refreshing: false,
-      }));
+      set((state) => {
+        const stale = isStaleSync(state, sync);
+        const nextSync = stale ? state.sync : sync;
+        return {
+          devices: dropStaleFollowerClaims(mergedDeviceList(state, fleet.devices), nextSync),
+          ...prunedHolds(state, fleet.devices),
+          discoveredAt: fleet.discovered_at,
+          discoveryMethod: fleet.discovery_method,
+          ...(stale ? {} : { sync, syncHoldUntil: 0 }),
+          health: health ?? state.health,
+          refreshing: false,
+        };
+      });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Refresh failed';
       set({ refreshing: false, error: message, toast: message });
@@ -736,7 +748,10 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         if (!linkPresent(sync)) {
           // BluOS SyncStatus often lags AddSlave — keep optimistic sync painted.
           set((state) => ({
-            devices: mergedDeviceList(state, fleet.devices),
+            devices: dropStaleFollowerClaims(
+              mergedDeviceList(state, fleet.devices),
+              state.sync,
+            ),
             ...prunedHolds(state, fleet.devices),
             discoveredAt: fleet.discovered_at,
             discoveryMethod: fleet.discovery_method,
@@ -746,7 +761,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
           continue;
         }
         set((state) => ({
-          devices: mergedDeviceList(state, fleet.devices),
+          devices: dropStaleFollowerClaims(mergedDeviceList(state, fleet.devices), sync),
           ...prunedHolds(state, fleet.devices),
           discoveredAt: fleet.discovered_at,
           discoveryMethod: fleet.discovery_method,

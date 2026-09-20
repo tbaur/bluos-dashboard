@@ -20,6 +20,7 @@ import {
   presenceSegments,
 } from '@/lib/health';
 import { META_SEP, joinMeta } from '@/lib/meta';
+import { displaySyncRole } from '@/lib/syncGraph';
 import { reorderQueue } from '@/lib/queue';
 import { streamQualityLabel } from '@/lib/streamQuality';
 import { formatPlayerUptime } from '@/lib/uptime';
@@ -46,6 +47,7 @@ export function PlayerDetailPage() {
   const { id = '' } = useParams();
   const device = useFleetStore((s) => s.devices.find((d) => d.id === id));
   const devices = useFleetStore((s) => s.devices);
+  const sync = useFleetStore((s) => s.sync);
   const control = useFleetStore((s) => s.control);
   const toggleMute = useFleetStore((s) => s.toggleMute);
   const patchDevice = useFleetStore((s) => s.patchDevice);
@@ -197,6 +199,7 @@ export function PlayerDetailPage() {
     );
   }
 
+  const role = displaySyncRole(device, sync);
   const primary = device.master
     ? devices.find((d) => endpointsMatch(deviceEndpoint(d), device.master))
     : null;
@@ -268,9 +271,9 @@ export function PlayerDetailPage() {
           <span className="badge" data-role={device.status === 'online' ? 'primary' : undefined}>
             {device.status}
           </span>
-          {device.sync_role !== 'standalone' && (
-            <span className="badge" data-role={device.sync_role}>
-              {device.sync_role}
+          {role !== 'standalone' && (
+            <span className="badge" data-role={role}>
+              {role}
             </span>
           )}
         </div>
@@ -401,7 +404,7 @@ export function PlayerDetailPage() {
           </div>
           <div>
             <dt>Sync</dt>
-            <dd>{syncSummary(device, primary?.name ?? null)}</dd>
+            <dd>{syncSummary({ ...device, sync_role: role }, primary?.name ?? null)}</dd>
           </div>
           {diag?.signal_strength ? (
             <div>

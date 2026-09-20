@@ -20,6 +20,7 @@ export function HousePage() {
   const refresh = useFleetStore((s) => s.refresh);
   const reloadStatus = useFleetStore((s) => s.reloadStatus);
   const holdSync = useFleetStore((s) => s.holdSync);
+  const setSync = useFleetStore((s) => s.setSync);
   const fleetRebootAll = useFleetStore((s) => s.fleetRebootAll);
 
   const [busy, setBusy] = useState<string | null>(null);
@@ -45,9 +46,13 @@ export function HousePage() {
   };
 
   const breakAll = async () => {
-    holdSync(8000);
     try {
       const result = await api.syncBreak();
+      setSync({
+        groups: [],
+        standalone_ids: useFleetStore.getState().devices.map((d) => d.id),
+      });
+      holdSync(6000);
       await reloadStatus();
       if (result.failed > 0) {
         setToast(`Ungrouped ${result.succeeded}; ${result.failed} failed`);

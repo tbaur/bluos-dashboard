@@ -66,6 +66,7 @@ describe('PlayerRow', () => {
     pause.mockClear();
     useFleetStore.setState({
       devices: [sample],
+      sync: null,
       control: async (_id, action, optimistic) => {
         if (optimistic) {
           useFleetStore.getState().patchDevice(_id, optimistic);
@@ -110,5 +111,29 @@ describe('PlayerRow', () => {
     );
     expect(screen.getByText('Follows Kitchen')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Play' })).not.toBeInTheDocument();
+  });
+
+  it('does not show Follows after the runtime group is gone', () => {
+    const follower: PlayerStatus = {
+      ...sample,
+      id: 'player-den',
+      name: 'Den',
+      ip: '192.168.1.21',
+      sync_role: 'synced',
+      master: '192.168.1.20:11000',
+      state: 'stop',
+    };
+    useFleetStore.setState({
+      devices: [sample, follower],
+      sync: { groups: [], standalone_ids: [sample.id, follower.id] },
+    });
+    render(
+      <MemoryRouter>
+        <PlayerRow device={follower} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText(/Follows/)).not.toBeInTheDocument();
+    expect(screen.queryByText('synced')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
   });
 });

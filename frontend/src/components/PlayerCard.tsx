@@ -9,6 +9,7 @@ import {
   formatDeviceHost,
 } from '@/lib/endpoint';
 import { joinMeta } from '@/lib/meta';
+import { displaySyncRole } from '@/lib/syncGraph';
 import { useFleetStore } from '@/store/fleetStore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -45,6 +46,7 @@ function primaryNameFor(device: PlayerStatus, devices: PlayerStatus[]): string |
 /** Compact fixed-column fleet row — keeps controls aligned across players. */
 export function PlayerRow({ device }: { device: PlayerStatus }) {
   const devices = useFleetStore((s) => s.devices);
+  const sync = useFleetStore((s) => s.sync);
   const control = useFleetStore((s) => s.control);
   const toggleMute = useFleetStore((s) => s.toggleMute);
   const holdVolume = useFleetStore((s) => s.holdVolume);
@@ -60,8 +62,13 @@ export function PlayerRow({ device }: { device: PlayerStatus }) {
   }, [device, devices]);
   const volumesLinked =
     volumePeers.length > 1 && volumePeers.every((d) => d.volume === volumePeers[0].volume);
-  const follows = useMemo(() => primaryNameFor(device, devices), [device, devices]);
-  const synced = device.sync_role === 'synced';
+  const role = displaySyncRole(device, sync);
+  const follows = useMemo(() => primaryNameFor({ ...device, sync_role: role }, devices), [
+    device,
+    devices,
+    role,
+  ]);
+  const synced = role === 'synced';
   const playing = isPlaying(device.state);
   const np = nowPlaying(device);
 
@@ -122,7 +129,7 @@ export function PlayerRow({ device }: { device: PlayerStatus }) {
     <div
       className="fleet-row"
       role="row"
-      data-sync={device.sync_role}
+      data-sync={role}
       data-idle={np.idle ? 'true' : 'false'}
     >
       <div className="fleet-cell fleet-cell-player" role="cell">
@@ -138,9 +145,9 @@ export function PlayerRow({ device }: { device: PlayerStatus }) {
         </div>
         <div className="fleet-player-hardware">{formatDeviceHardware(device)}</div>
         <div className="fleet-player-meta">
-          {device.sync_role !== 'standalone' && (
-            <span className="badge" data-role={device.sync_role}>
-              {device.sync_role}
+          {role !== 'standalone' && (
+            <span className="badge" data-role={role}>
+              {role}
             </span>
           )}
           <span className="fleet-player-ip">{formatDeviceHost(device)}</span>

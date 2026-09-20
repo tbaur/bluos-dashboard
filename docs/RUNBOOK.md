@@ -87,6 +87,7 @@ Variable names and defaults: [CONFIGURATION.md](CONFIGURATION.md).
 - Ungrouping always targets the **primary** with `RemoveSlave` (or legacy `/Sync?remove=`).
 - If the primary is offline, the API tries the slave, then **reparent-ungroup**: briefly `AddSlave` onto another **free/standalone** online player (never a member of another group), then `RemoveSlave` there, and verifies standalone via `/SyncStatus`.
 - After a successful leave, freed players are **stopped** so leftover AirPlay/capture sessions clear (primary only when it has no remaining followers).
+- The lead often reports no slaves before the follower drops `master`. The snapshot and fleet row treat that leftover claim as standalone so the row does not stay SYNCED after the group is gone.
 - Orphan groups appear in the Sync panel with lead name **Offline primary** and an `offline` role chip; you can ungroup followers but cannot add rooms until a live primary exists.
 - **Group all free rooms** / `POST /api/v1/sync/enable` attaches only standalones — existing groups are left alone.
 - **Ungroup all** / `POST /api/v1/sync/break` returns succeeded/failed counts; HTTP 502 only when every link removal fails.

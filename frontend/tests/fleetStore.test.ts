@@ -233,4 +233,39 @@ describe('fleetStore', () => {
     expect(useFleetStore.getState().playbackHoldUntil['player-1'] ?? 0).toBe(0);
     expect(useFleetStore.getState().devices[0].volume).toBe(40);
   });
+
+  it('clears leftover SYNCED when the runtime group snapshot is empty', () => {
+    const follower = {
+      ...sample,
+      id: 'player-2',
+      name: 'Den',
+      sync_role: 'synced' as const,
+      master: '192.168.1.10:11000',
+    };
+    useFleetStore.getState().setFleet([sample, follower]);
+    useFleetStore.getState().setSync({ groups: [], standalone_ids: [sample.id, follower.id] });
+    const den = useFleetStore.getState().devices.find((d) => d.id === 'player-2');
+    expect(den?.sync_role).toBe('standalone');
+    expect(den?.master).toBe('');
+  });
+
+  it('ignores a late group snapshot while an ungroup hold is active', () => {
+    useFleetStore.getState().setSync({ groups: [], standalone_ids: [sample.id] });
+    useFleetStore.getState().holdSync(10_000);
+    useFleetStore.getState().setSync({
+      groups: [
+        {
+          primary_id: sample.id,
+          primary_name: sample.name,
+          primary_ip: sample.ip,
+          primary_endpoint: `${sample.ip}:11000`,
+          group: '',
+          slave_ids: ['player-2'],
+          slave_names: ['Den'],
+        },
+      ],
+      standalone_ids: [],
+    });
+    expect(useFleetStore.getState().sync?.groups).toEqual([]);
+  });
 });

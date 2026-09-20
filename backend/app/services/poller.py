@@ -88,9 +88,14 @@ class StatusPoller:
         snap = await self.client.load_player(endpoint, device_id=device_id)
         self._remember_tags(device_id, snap)
         self._record_result(snap.player)
+        fleet_before = self._fleet_signature()
         await self.discovery.update_device(snap.player)
-        await self.events.publish("device", snap.player.model_dump())
-        return snap.player
+        stored = self.discovery.get_device(device_id) or snap.player
+        if self._fleet_signature() == fleet_before:
+            await self.events.publish("device", stored.model_dump())
+        else:
+            await self.events.publish("fleet", self.fleet_payload())
+        return stored
 
     async def interrupt(self, device_ids: Sequence[str]) -> None:
         """Drop held Status long-polls so a control request can use the player.
@@ -207,11 +212,12 @@ class StatusPoller:
             self._remember_tags(device.id, snap)
             player = self._apply_poll_result(device, snap.player)
         await self.discovery.update_device(player)
+        stored = self.discovery.get_device(device.id) or player
         self.last_poll_at = time.time()
         # A track or seek tick only moves one player; sending the whole fleet on
         # every poll costs O(devices) serialization and re-renders the whole UI.
         if self._fleet_signature() == fleet_before:
-            await self.events.publish("device", player.model_dump())
+            await self.events.publish("device", stored.model_dump())
         else:
             await self.events.publish("fleet", self.fleet_payload())
 

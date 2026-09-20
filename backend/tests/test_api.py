@@ -10,7 +10,7 @@ from app.main import create_app
 from app.models import PlayerStatus, SyncRole
 from app.services.events import EventBus
 from app.services.poller import StatusPoller
-from app.services.sync import build_sync_state
+from app.services.sync import build_sync_state, drop_stale_follower_claims
 from app.state import AppState
 
 
@@ -55,6 +55,58 @@ def test_build_sync_state() -> None:
     assert state.groups[0].primary_id == "p1"
     assert state.groups[0].slave_ids == ["p2"]
     assert state.standalone_ids == ["p3"]
+
+
+def test_drop_stale_follower_claims_when_primary_no_longer_lists_them() -> None:
+    primary = PlayerStatus(
+        id="p1",
+        ip="192.168.1.10",
+        name="Primary",
+        status="online",
+        slaves=[],
+        sync_role=SyncRole.STANDALONE,
+    )
+    slave = PlayerStatus(
+        id="p2",
+        ip="192.168.1.11",
+        name="Slave",
+        status="online",
+        master="192.168.1.10:11000",
+        sync_role=SyncRole.SYNCED,
+    )
+    next_devices = drop_stale_follower_claims([primary, slave])
+    assert next_devices[1].sync_role == SyncRole.STANDALONE
+    assert next_devices[1].master == ""
+
+
+def test_drop_stale_follower_claims_keeps_confirmed_and_orphan() -> None:
+    primary = PlayerStatus(
+        id="p1",
+        ip="192.168.1.10",
+        name="Primary",
+        status="online",
+        slaves=["192.168.1.11:11000"],
+        sync_role=SyncRole.PRIMARY,
+    )
+    slave = PlayerStatus(
+        id="p2",
+        ip="192.168.1.11",
+        name="Slave",
+        status="online",
+        master="192.168.1.10:11000",
+        sync_role=SyncRole.SYNCED,
+    )
+    orphan = PlayerStatus(
+        id="p3",
+        ip="192.168.1.12",
+        name="Orphan",
+        status="online",
+        master="192.168.1.99:11000",
+        sync_role=SyncRole.SYNCED,
+    )
+    next_devices = drop_stale_follower_claims([primary, slave, orphan])
+    assert next_devices[1].sync_role == SyncRole.SYNCED
+    assert next_devices[2].sync_role == SyncRole.SYNCED
 
 
 async def _app_with_player(settings: Settings, monkeypatch: pytest.MonkeyPatch):

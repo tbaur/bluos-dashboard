@@ -11,7 +11,7 @@ from app.bluos.client import BluOSClient
 from app.bluos.status import PlayerSnapshot
 from app.config import Settings
 from app.discovery.service import DiscoveryService
-from app.models import PlayerStatus
+from app.models import PlayerStatus, SyncRole
 from app.services.events import EventBus
 from app.services.poller import StatusPoller
 
@@ -215,6 +215,69 @@ async def test_empty_fleet_triggers_refresh(
     monkeypatch.setattr(DiscoveryService, "refresh", refresh)
     await poller._maybe_rediscover()
     assert called["n"] == 1
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_refresh_one_demotes_stale_follower_and_publishes_fleet(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    primary = PlayerStatus(
+        id="p1",
+        ip="192.168.1.10",
+        name="Lead",
+        status="online",
+        slaves=[],
+        sync_role=SyncRole.STANDALONE,
+    )
+    follower = PlayerStatus(
+        id="p2",
+        ip="192.168.1.11",
+        name="Follow",
+        status="online",
+        master="192.168.1.10:11000",
+        sync_role=SyncRole.SYNCED,
+    )
+    discovery._snapshot.devices = [primary, follower]
+    discovery._snapshot.ips_by_id = {
+        "p1": "192.168.1.10:11000",
+        "p2": "192.168.1.11:11000",
+    }
+    events = EventBus()
+    poller = StatusPoller(settings, discovery, client, events)
+    published: list[tuple[str, object]] = []
+
+    async def capture(event: str, payload: object) -> None:
+        published.append((event, payload))
+
+    monkeypatch.setattr(events, "publish", capture)
+
+    async def fake_load(target: str, **_kwargs: object) -> PlayerSnapshot:
+        return PlayerSnapshot(
+            player=PlayerStatus(
+                id="p1",
+                ip="192.168.1.10",
+                name="Lead",
+                status="online",
+                slaves=[],
+                sync_role=SyncRole.STANDALONE,
+            ),
+            status_etag="e1",
+            sync_stat="s1",
+        )
+
+    monkeypatch.setattr(client, "load_player", fake_load)
+    updated = await poller.refresh_one("p1")
+    assert updated is not None
+    assert updated.sync_role == SyncRole.STANDALONE
+    stored_follow = discovery.get_device("p2")
+    assert stored_follow is not None
+    assert stored_follow.sync_role == SyncRole.STANDALONE
+    assert stored_follow.master == ""
+    assert [event for event, _ in published] == ["fleet"]
     await client.aclose()
 
 

@@ -27,6 +27,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // One jsdom import per worker; each file still gets a fresh window.
+    pool: 'vmThreads',
     setupFiles: ['./tests/setup.ts'],
     globals: true,
     coverage: {
