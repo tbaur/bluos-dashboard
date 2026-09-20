@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.4](https://github.com/tbaur/bluos-dashboard/compare/v1.0.3...v1.0.4) (2026-09-20)
+
+
+### Bug Fixes
+
+* clear leftover synced state after ungroup ([#86](https://github.com/tbaur/bluos-dashboard/issues/86)) ([092344a](https://github.com/tbaur/bluos-dashboard/commit/092344ad5456013e92f94b997f7c274eda56f6c2))
+
 ## [1.0.3](https://github.com/tbaur/bluos-dashboard/compare/v1.0.2...v1.0.3) (2026-09-13)
 
 
