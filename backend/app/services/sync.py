@@ -18,6 +18,38 @@ def is_orphan_primary_id(primary_id: str) -> bool:
     return primary_id.startswith("orphan-")
 
 
+def drop_stale_follower_claims(devices: list[PlayerStatus]) -> list[PlayerStatus]:
+    """Treat a follower as standalone when its live primary no longer lists it.
+
+    After RemoveSlave the lead often updates first. The follower can still report
+    ``master`` until the next SyncStatus, which left the fleet row saying SYNCED
+    after the group graph was already empty.
+    """
+    by_endpoint = {device.endpoint: device for device in devices}
+    updated: list[PlayerStatus] = []
+    changed = False
+    for device in devices:
+        if device.sync_role != SyncRole.SYNCED:
+            updated.append(device)
+            continue
+        master_ep = (device.master or "").strip()
+        primary = by_endpoint.get(master_ep) if master_ep else None
+        if primary is None or device.endpoint in primary.slaves:
+            updated.append(device)
+            continue
+        changed = True
+        updated.append(
+            device.model_copy(
+                update={
+                    "sync_role": SyncRole.STANDALONE,
+                    "master": "",
+                    "group": "",
+                }
+            )
+        )
+    return updated if changed else devices
+
+
 def build_sync_state(devices: list[PlayerStatus]) -> SyncState:
     by_endpoint = {d.endpoint: d for d in devices}
     groups: list[SyncGroup] = []

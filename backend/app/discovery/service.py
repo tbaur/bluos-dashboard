@@ -12,6 +12,7 @@ from app.config import Settings
 from app.discovery.lsdp import LSDPDevice, LSDPDiscovery
 from app.discovery.mdns import BLUOS_MDNS_SERVICES, MDNSDiscovery
 from app.models import PlayerStatus
+from app.services.sync import drop_stale_follower_claims
 from app.validators import (
     DEFAULT_BLUOS_PORT,
     format_endpoint,
@@ -174,6 +175,7 @@ class DiscoveryService:
                     self._grace_until.pop(present, None)
                     self._grace_endpoints.pop(present, None)
 
+                players = drop_stale_follower_claims(players)
                 endpoints_by_id = {p.id: p.endpoint for p in players}
                 ids_by_endpoint = {p.endpoint: p.id for p in players}
                 self._snapshot = DiscoverySnapshot(
@@ -304,7 +306,7 @@ class DiscoveryService:
             devices = [player if d.id == player.id else d for d in self._snapshot.devices]
             if not any(d.id == player.id for d in self._snapshot.devices):
                 devices.append(player)
-            self._snapshot.devices = devices
+            self._snapshot.devices = drop_stale_follower_claims(devices)
             self._snapshot.endpoints_by_id[player.id] = player.endpoint
             self._snapshot.ids_by_endpoint[player.endpoint] = player.id
             existing = self._snapshot.endpoints.get(

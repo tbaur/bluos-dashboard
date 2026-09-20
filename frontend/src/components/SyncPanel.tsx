@@ -148,12 +148,10 @@ export function SyncPanel() {
     }
 
     const occupied = occupiedRoomIds(nextGroups);
-    holdSync(6000);
     setSync({
       groups: nextGroups,
       standalone_ids: state.devices.map((d) => d.id).filter((id) => !occupied.has(id)),
     });
-    // Re-arm hold — setSync clears it on accept; keep protection for SSE races.
     holdSync(6000);
     patchDevice(primaryId, {
       sync_role: 'primary',
@@ -163,6 +161,30 @@ export function SyncPanel() {
       sync_role: 'synced',
       master: deviceEndpoint(lead),
     });
+  };
+
+  const applyOptimisticUnlink = (primaryId: string, slaveIds: string[]) => {
+    const state = useFleetStore.getState();
+    const remove = new Set(slaveIds);
+    const nextGroups = (state.sync?.groups ?? [])
+      .map((g) => {
+        if (g.primary_id !== primaryId) return g;
+        const keep = g.slave_ids
+          .map((id, index) => ({ id, name: g.slave_names[index] ?? id }))
+          .filter((member) => !remove.has(member.id));
+        return {
+          ...g,
+          slave_ids: keep.map((member) => member.id),
+          slave_names: keep.map((member) => member.name),
+        };
+      })
+      .filter((g) => g.slave_ids.length > 0);
+    const occupied = occupiedRoomIds(nextGroups);
+    setSync({
+      groups: nextGroups,
+      standalone_ids: state.devices.map((d) => d.id).filter((id) => !occupied.has(id)),
+    });
+    holdSync(6000);
   };
 
   const addFollower = (primaryId: string, slaveId: string, fromBuilder: boolean) => {
@@ -187,6 +209,7 @@ export function SyncPanel() {
   const removeFollower = (primaryId: string, slaveId: string) => {
     void run(primaryId, async () => {
       await api.syncRemove(primaryId, slaveId);
+      applyOptimisticUnlink(primaryId, [slaveId]);
       await reloadStatus();
     });
   };
@@ -196,6 +219,7 @@ export function SyncPanel() {
       for (const slaveId of group.slave_ids) {
         await api.syncRemove(group.primary_id, slaveId);
       }
+      applyOptimisticUnlink(group.primary_id, group.slave_ids);
       await reloadStatus();
     }).then(() => {
       if (addingTo === group.primary_id) setAddingTo(null);
@@ -212,6 +236,11 @@ export function SyncPanel() {
     }
     void run(groups[0].primary_id, async () => {
       const result = await api.syncBreak();
+      setSync({
+        groups: [],
+        standalone_ids: useFleetStore.getState().devices.map((d) => d.id),
+      });
+      holdSync(6000);
       await reloadStatus();
       if (result.failed > 0) {
         useFleetStore.getState().setToast(
