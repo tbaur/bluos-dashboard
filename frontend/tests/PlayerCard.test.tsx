@@ -136,4 +136,26 @@ describe('PlayerRow', () => {
     expect(screen.queryByText('synced')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
   });
+
+  it('does not mark a NAD C658 as volume-linked with Bluesound rooms', () => {
+    const c658: PlayerStatus = {
+      ...sample,
+      id: 'player-c658',
+      name: 'NAD C658',
+      model: 'C658',
+      brand: 'NAD',
+      full_model: 'NAD C658',
+      volume: 20,
+      state: 'stop',
+      track: '',
+      artist: '',
+    };
+    useFleetStore.setState({ devices: [sample, c658] });
+    render(
+      <MemoryRouter>
+        <PlayerRow device={c658} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText('link')).not.toBeInTheDocument();
+  });
 });

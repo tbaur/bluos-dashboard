@@ -278,4 +278,41 @@ describe('FleetBar house remote art', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Set NAD CI S2 volume to 42' }));
     await waitFor(() => expect(setFleetVolume).toHaveBeenCalledWith(42, ['2']));
   });
+
+  it('keeps NAD C658 off house sliders and out of Bluesound writes', async () => {
+    const setFleetVolume = vi.fn().mockResolvedValue(undefined);
+    useFleetStore.setState({
+      devices: [
+        player({ id: '1', name: 'Patio Speakers', volume: 26 }),
+        player({
+          id: '2',
+          name: 'NAD C658',
+          model: 'C658',
+          brand: 'NAD',
+          full_model: 'NAD C658',
+          volume: 56,
+        }),
+        player({
+          id: '3',
+          name: 'Kitchen',
+          model: 'CI S2',
+          brand: 'NAD',
+          full_model: 'NAD CI S2',
+          volume: 60,
+        }),
+      ],
+      sync: null,
+      setFleetVolume,
+    });
+
+    renderBar();
+    expect(screen.getByRole('heading', { name: 'Bluesound' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'NAD CI S2' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'NAD C658' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Set volume on Bluesound players'), {
+      target: { value: '20' },
+    });
+    await waitFor(() => expect(setFleetVolume).toHaveBeenCalledWith(20, ['1']));
+  });
 });
