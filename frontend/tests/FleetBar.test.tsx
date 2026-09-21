@@ -245,6 +245,41 @@ describe('FleetBar house remote art', () => {
     expect(screen.getByRole('heading', { name: 'House' })).toBeInTheDocument();
   });
 
+  it('sets Bluesound volume from house level chips', async () => {
+    const setFleetVolume = vi.fn().mockResolvedValue(undefined);
+    useFleetStore.setState({
+      devices: [
+        player({
+          id: '1',
+          name: 'Kitchen',
+          volume: 20,
+        }),
+        player({
+          id: '2',
+          name: 'Patio',
+          model: 'CI S2',
+          brand: 'NAD',
+          full_model: 'NAD CI S2',
+          volume: 60,
+        }),
+      ],
+      sync: null,
+      setFleetVolume,
+    });
+
+    renderBar();
+    expect(screen.getByRole('group', { name: 'Bluesound levels' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Set Bluesound volume to 20' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Set Bluesound volume to 48' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Set Bluesound volume to 60' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set Bluesound volume to 48' }));
+    await waitFor(() => expect(setFleetVolume).toHaveBeenCalledWith(48, ['1']));
+  });
+
   it('sets NAD CI S2 volume from level chips', async () => {
     const setFleetVolume = vi.fn().mockResolvedValue(undefined);
     useFleetStore.setState({
@@ -269,7 +304,7 @@ describe('FleetBar house remote art', () => {
 
     renderBar();
     expect(screen.getByRole('group', { name: 'NAD CI S2 levels' })).toBeInTheDocument();
-    expect(screen.queryByRole('group', { name: 'Bluesound levels' })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Bluesound levels' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Set NAD CI S2 volume to 60' })).toHaveAttribute(
       'aria-pressed',
       'true',

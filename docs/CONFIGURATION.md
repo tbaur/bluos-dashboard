@@ -62,7 +62,7 @@ mDNS discovers primary players (`_musc._tcp.local.`) and CI secondary zones (`_m
 
 ### Multi-zone and volume UI
 
-NAD CI multi-zone chassis expose each zone as its own BluOS endpoint (often `:11010`, `:11011`, …). The fleet UI shows zone numbers next to the model name. **Bluesound** volume applies to bluesound.com players (Nodes/Pulse); **NAD CI S2** volume applies only to CI S2 zones. Other brands (NAD C658) are not on either house slider.
+NAD CI multi-zone chassis expose each zone as its own BluOS endpoint (often `:11010`, `:11011`, …). The fleet UI shows zone numbers next to the model name. **Bluesound** volume applies to bluesound.com players (Nodes/Pulse) with 20 / 48 / 60 chips; **NAD CI S2** volume applies only to CI S2 zones with 42 / 50 / 60 / 70 chips. Other brands (NAD C658) are not on either house slider.
 
 ### Sync / orphan groups
 
