@@ -284,6 +284,10 @@ describe('HouseRemote', () => {
     expect(screen.getByText('All quiet')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pause house stream' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tablist', { name: 'House sources' })).not.toBeInTheDocument();
+    const actions = screen.getByRole('group', { name: 'House transport' });
+    expect(actions.closest('.house-remote-foot')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop all' })).toBeInTheDocument();
   });
 
   it('cycles repeat off → all → one', async () => {

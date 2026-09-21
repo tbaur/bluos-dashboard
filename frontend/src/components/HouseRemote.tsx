@@ -336,123 +336,125 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
         </div>
       ) : null}
 
-      {showNowPlaying && totlen > 0 ? (
-        <SeekBar
-          key={lead?.id ?? 'house-seek'}
-          initialSecs={secs}
-          totlen={totlen}
-          playing={streamPlaying && (lead?.state === 'play' || lead?.state === 'stream')}
-          canSeek={canSeek}
-          onSeek={
-            canSeek
-              ? (seconds) =>
-                  commandTargets(
-                    'seek',
-                    (id) => api.seek(id, seconds),
-                    { secs: seconds },
-                    targets.filter((id) => devices.find((d) => d.id === id)?.can_seek),
-                  )
-              : undefined
-          }
-        />
-      ) : null}
-
-      <div className="house-remote-deck">
-        {showNowPlaying ? (
-          <div className="house-remote-transport" role="group" aria-label="House stream">
-            <button
-              type="button"
-              className="house-icon-btn"
-              disabled={targets.length === 0}
-              aria-label="Previous track"
-              onClick={() => commandTargets('back', (id) => api.back(id))}
-            >
-              <IconPrev />
-            </button>
-            <button
-              type="button"
-              className="house-icon-btn house-icon-btn-play"
-              disabled={targets.length === 0}
-              aria-label={playLabel}
-              onClick={toggleStream}
-            >
-              {streamPlaying ? <IconPause /> : <IconPlay />}
-            </button>
-            <button
-              type="button"
-              className="house-icon-btn"
-              disabled={targets.length === 0}
-              aria-label="Next track"
-              onClick={() => commandTargets('skip', (id) => api.skip(id))}
-            >
-              <IconNext />
-            </button>
-            <button
-              type="button"
-              className="house-icon-btn house-icon-btn-mode"
-              disabled={targets.length === 0}
-              aria-label={shuffleOn ? 'Shuffle on' : 'Shuffle off'}
-              aria-pressed={shuffleOn}
-              onClick={() =>
-                commandTargets(
-                  'shuffle',
-                  (id) => api.setShuffle(id, shuffleOn ? 0 : 1),
-                  { shuffle: shuffleOn ? 0 : 1 },
-                )
-              }
-            >
-              <IconShuffle />
-            </button>
-            <button
-              type="button"
-              className="house-icon-btn house-icon-btn-mode"
-              disabled={targets.length === 0}
-              aria-label={repeatLabel}
-              aria-pressed={repeatMode !== 0}
-              onClick={() => {
-                const next = nextRepeat(repeatMode);
-                commandTargets('repeat', (id) => api.setRepeat(id, next), { repeat: next });
-              }}
-            >
-              <IconRepeat one={repeatMode === 2} />
-            </button>
-          </div>
+      <div className="house-remote-foot">
+        {showNowPlaying && totlen > 0 ? (
+          <SeekBar
+            key={lead?.id ?? 'house-seek'}
+            initialSecs={secs}
+            totlen={totlen}
+            playing={streamPlaying && (lead?.state === 'play' || lead?.state === 'stream')}
+            canSeek={canSeek}
+            onSeek={
+              canSeek
+                ? (seconds) =>
+                    commandTargets(
+                      'seek',
+                      (id) => api.seek(id, seconds),
+                      { secs: seconds },
+                      targets.filter((id) => devices.find((d) => d.id === id)?.can_seek),
+                    )
+                : undefined
+            }
+          />
         ) : null}
 
-        <div className="fleet-actions house-remote-actions" role="group" aria-label="House transport">
-          <button
-            type="button"
-            className="btn"
-            disabled={busy === 'mute'}
-            onClick={() => run('mute', () => fleetMuteAll(!allMuted))}
-          >
-            {busy === 'mute' ? '…' : allMuted ? 'Unmute' : 'Mute'}
-          </button>
-          {mixed ? (
+        <div className="house-remote-deck">
+          {showNowPlaying ? (
+            <div className="house-remote-transport" role="group" aria-label="House stream">
+              <button
+                type="button"
+                className="house-icon-btn"
+                disabled={targets.length === 0}
+                aria-label="Previous track"
+                onClick={() => commandTargets('back', (id) => api.back(id))}
+              >
+                <IconPrev />
+              </button>
+              <button
+                type="button"
+                className="house-icon-btn house-icon-btn-play"
+                disabled={targets.length === 0}
+                aria-label={playLabel}
+                onClick={toggleStream}
+              >
+                {streamPlaying ? <IconPause /> : <IconPlay />}
+              </button>
+              <button
+                type="button"
+                className="house-icon-btn"
+                disabled={targets.length === 0}
+                aria-label="Next track"
+                onClick={() => commandTargets('skip', (id) => api.skip(id))}
+              >
+                <IconNext />
+              </button>
+              <button
+                type="button"
+                className="house-icon-btn house-icon-btn-mode"
+                disabled={targets.length === 0}
+                aria-label={shuffleOn ? 'Shuffle on' : 'Shuffle off'}
+                aria-pressed={shuffleOn}
+                onClick={() =>
+                  commandTargets(
+                    'shuffle',
+                    (id) => api.setShuffle(id, shuffleOn ? 0 : 1),
+                    { shuffle: shuffleOn ? 0 : 1 },
+                  )
+                }
+              >
+                <IconShuffle />
+              </button>
+              <button
+                type="button"
+                className="house-icon-btn house-icon-btn-mode"
+                disabled={targets.length === 0}
+                aria-label={repeatLabel}
+                aria-pressed={repeatMode !== 0}
+                onClick={() => {
+                  const next = nextRepeat(repeatMode);
+                  commandTargets('repeat', (id) => api.setRepeat(id, next), { repeat: next });
+                }}
+              >
+                <IconRepeat one={repeatMode === 2} />
+              </button>
+            </div>
+          ) : null}
+
+          <div className="fleet-actions house-remote-actions" role="group" aria-label="House transport">
             <button
               type="button"
               className="btn"
-              disabled={busy === 'pause' || !anyPlaying}
-              title={anyPlaying ? 'Pause every playing room' : 'Nothing playing'}
-              onClick={() => run('pause', () => fleetPauseAll())}
+              disabled={busy === 'mute'}
+              onClick={() => run('mute', () => fleetMuteAll(!allMuted))}
             >
-              {busy === 'pause' ? '…' : 'Pause all'}
+              {busy === 'mute' ? '…' : allMuted ? 'Unmute' : 'Mute'}
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="btn btn-danger"
-            disabled={busy === 'stop'}
-            title="Stop playback on every player"
-            onClick={() => run('stop', () => fleetStopAll())}
-          >
-            {busy === 'stop' ? '…' : 'Stop all'}
-          </button>
+            {mixed ? (
+              <button
+                type="button"
+                className="btn"
+                disabled={busy === 'pause' || !anyPlaying}
+                title={anyPlaying ? 'Pause every playing room' : 'Nothing playing'}
+                onClick={() => run('pause', () => fleetPauseAll())}
+              >
+                {busy === 'pause' ? '…' : 'Pause all'}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={busy === 'stop'}
+              title="Stop playback on every player"
+              onClick={() => run('stop', () => fleetStopAll())}
+            >
+              {busy === 'stop' ? '…' : 'Stop all'}
+            </button>
+          </div>
         </div>
+        <p className="house-remote-keys">
+          Space or K play/pause · arrows or J/L skip · M mute
+        </p>
       </div>
-      <p className="house-remote-keys">
-        Space or K play/pause · arrows or J/L skip · M mute
-      </p>
     </section>
   );
 }
