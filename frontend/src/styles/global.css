@@ -199,10 +199,12 @@ a {
 }
 
 .house-remote {
+  --house-art-size: 148px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 18px 20px 14px;
+  min-height: calc(var(--house-art-size) + 12.5rem);
   background:
     radial-gradient(80% 120% at 0% 0%, rgba(61, 156, 240, 0.16), transparent 55%),
     radial-gradient(70% 100% at 100% 80%, rgba(62, 207, 142, 0.08), transparent 50%),
@@ -210,6 +212,7 @@ a {
 }
 
 .house-remote-page {
+  --house-art-size: 176px;
   margin: 0 0 22px;
 }
 
@@ -222,18 +225,14 @@ a {
 }
 
 .house-remote[data-art='true'] .house-remote-body {
-  grid-template-columns: 148px minmax(0, 1fr);
-}
-
-.house-remote-page[data-art='true'] .house-remote-body {
-  grid-template-columns: 176px minmax(0, 1fr);
+  grid-template-columns: var(--house-art-size) minmax(0, 1fr);
 }
 
 .house-remote-art {
   position: relative;
   display: block;
-  width: 148px;
-  height: 148px;
+  width: var(--house-art-size);
+  height: var(--house-art-size);
   border-radius: 16px;
   overflow: hidden;
   flex-shrink: 0;
@@ -246,11 +245,6 @@ a {
     0 18px 40px rgba(0, 0, 0, 0.4),
     0 0 48px rgba(61, 156, 240, 0.16);
   transition: border-color 160ms ease, transform 180ms ease, box-shadow 180ms ease;
-}
-
-.house-remote-page .house-remote-art {
-  width: 176px;
-  height: 176px;
 }
 
 .house-remote[data-idle='false']:not([data-paused='true']) .house-remote-art {
@@ -524,12 +518,20 @@ a {
   touch-action: none;
 }
 
+.house-remote-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .house-remote-deck {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px 18px;
+  min-height: 58px;
 }
 
 .house-remote-transport {
@@ -621,15 +623,15 @@ a {
 }
 
 @media (max-width: 860px) {
-  .house-remote[data-art='true'] .house-remote-body,
-  .house-remote-page[data-art='true'] .house-remote-body {
-    grid-template-columns: 104px minmax(0, 1fr);
+  .house-remote {
+    --house-art-size: 104px;
   }
 
-  .house-remote-art,
-  .house-remote-page .house-remote-art {
-    width: 104px;
-    height: 104px;
+  .house-remote[data-art='true'] .house-remote-body {
+    grid-template-columns: var(--house-art-size) minmax(0, 1fr);
+  }
+
+  .house-remote-art {
     border-radius: 12px;
   }
 
