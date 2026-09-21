@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.0](https://github.com/tbaur/bluos-dashboard/compare/v1.0.5...v1.1.0) (2026-09-21)
+
+
+### Features
+
+* add Bluesound house volume chips ([#90](https://github.com/tbaur/bluos-dashboard/issues/90)) ([1c46075](https://github.com/tbaur/bluos-dashboard/commit/1c460755f74dd945d05d342d5fcafbfce40c9852))
+
 ## [1.0.5](https://github.com/tbaur/bluos-dashboard/compare/v1.0.4...v1.0.5) (2026-09-20)
 
 
