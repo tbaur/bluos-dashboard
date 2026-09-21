@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.1](https://github.com/tbaur/bluos-dashboard/compare/v1.1.0...v1.1.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* keep house mute and stop in place when idle ([#92](https://github.com/tbaur/bluos-dashboard/issues/92)) ([1188d6a](https://github.com/tbaur/bluos-dashboard/commit/1188d6aa6932f2e99cd9dd5ca6a12e6a4cee7a30))
+
 ## [1.1.0](https://github.com/tbaur/bluos-dashboard/compare/v1.0.5...v1.1.0) (2026-09-21)
 
 
