@@ -15,7 +15,7 @@ Related CLI: [bluos-controller](https://github.com/tbaur/bluos-controller). This
 
 - **House remote** — artwork, title/album/source, rooms on the stream, live seek, skip, shuffle/repeat, mute, and stop all. Space or K play/pause, arrows or J/L skip, M mute. Skip keeps now-playing painted (no empty flash). When rooms are on different sources, pick which stream the remote drives.
 - **Fleet** — every player, live now-playing, A–Z or clustered by sync group (auto-switches to Sync when a group forms).
-- **Volume** — **Bluesound** (bluesound.com Nodes/Pulse) and **NAD CI S2** are separate sliders (different amp scales). CI S2 also has 42 / 50 / 60 / 70 chips. Other brands (NAD C658, …) use the player row only.
+- **Volume** — **Bluesound** (bluesound.com Nodes/Pulse) and **NAD CI S2** are separate sliders (different amp scales). Bluesound has 20 / 48 / 60 chips; CI S2 has 42 / 50 / 60 / 70. Other brands (NAD C658, …) use the player row only.
 - **Multi-room** — create groups, add/remove followers, group all free rooms under a lead, ungroup one set or all. Break-all also clears orphans whose primary left the network.
 - **Per player** — queue (loaded on open, optimistic reorder), inputs / presets / Bluetooth / settings when Advanced is opened, diagnostics (uptime from the device web UI), 12-hour presence bar and last drop, reboot. Leaving the page aborts diagnostics and upgrade scrapes so Skip and queue moves are not starved by the browser’s six connections per host.
 - **House page** — same remote, poller drop history for **this dashboard process** (24h, not persisted), firmware inventory + upgrade check, reboot all, ungroup all.

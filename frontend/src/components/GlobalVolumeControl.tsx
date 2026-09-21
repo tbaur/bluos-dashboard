@@ -5,6 +5,7 @@ import { VolumeNudgeButtons } from '@/components/VolumeNudgeButtons';
 import { partitionVolumeGroups } from '@/lib/deviceGroups';
 import { useFleetStore } from '@/store/fleetStore';
 
+const BLUESOUND_VOLUME_LEVELS = [20, 48, 60] as const;
 const CI_S2_VOLUME_LEVELS = [42, 50, 60, 70] as const;
 
 function medianVolume(volumes: number[]): number {
@@ -218,6 +219,7 @@ export function FleetBar() {
               devices={bluesound}
               inputId="global-vol"
               ariaLabel="Set volume on Bluesound players"
+              levels={BLUESOUND_VOLUME_LEVELS}
             />
           ) : null}
           {ciS2.length > 0 ? (
