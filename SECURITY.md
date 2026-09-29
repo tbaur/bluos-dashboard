@@ -22,7 +22,7 @@ If you discover a security vulnerability, please report it responsibly:
 
 ## Context
 
-BluOS players have no authentication — each device already exposes control on the LAN. This dashboard consolidates that surface. Operational guidance (bind address, CORS, OpenAPI) lives in [docs/CONFIGURATION.md](docs/CONFIGURATION.md) under **Network exposure**.
+BluOS players have no authentication — each device already exposes control on the LAN. This dashboard consolidates that surface. Operational guidance (bind address, CORS, OpenAPI) is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md) under **Network exposure**.
 
 ## Security Measures
 

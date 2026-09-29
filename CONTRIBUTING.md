@@ -61,7 +61,7 @@ When behavior users or operators can see changes, update the matching docs in th
 | Supported versions / vuln process | [SECURITY.md](SECURITY.md) |
 | Release process or forcing a version (`Release-As`) | [RELEASING.md](RELEASING.md) |
 
-`CHANGELOG.md` is owned by [release-please](RELEASING.md) — do not hand-edit it for routine releases. Released version strings are all release-please managed, in `.release-please-manifest.json`, `backend/app/__init__.py`, `frontend/src/version.ts`, `frontend/package.json`, `backend/pyproject.toml`, and the root `pyproject.toml`.
+[release-please](RELEASING.md) generates `CHANGELOG.md` — do not hand-edit it for routine releases. release-please manages all released version strings, in `.release-please-manifest.json`, `backend/app/__init__.py`, `frontend/src/version.ts`, `frontend/package.json`, `backend/pyproject.toml`, and the root `pyproject.toml`.
 
 ## Development setup
 
@@ -112,11 +112,7 @@ npm audit --audit-level=moderate             # CI reports the dev tree, non-bloc
 npm run build
 ```
 
-Coverage gates live next to the code they guard, so they stay correct as they are
-raised: `coverage report --fail-under=90` for the backend, and the `thresholds`
-block in [frontend/vite.config.ts](frontend/vite.config.ts) for the frontend
-(global lines/statements/functions/branches, plus a per-file floor on
-`src/store/fleetStore.ts`, which holds the optimistic-update logic).
+Coverage thresholds are defined next to the code they guard, so they stay correct as they are raised: `coverage report --fail-under=90` for the backend, and the `thresholds` block in [frontend/vite.config.ts](frontend/vite.config.ts) for the frontend (global lines/statements/functions/branches, plus a per-file floor on `src/store/fleetStore.ts`, which holds the optimistic-update logic).
 
 [Tests](.github/workflows/test.yml) runs everything above on pull requests, as
 `Backend (Python 3.10 | 3.13 | 3.14)` and `Frontend`. It also declares a
@@ -145,7 +141,7 @@ bluos-dashboard/
 
 - Validate all external input at API boundaries.
 - Keep BluOS protocol knowledge in `backend/app/bluos/`.
-- Do not hardcode device IPs — discovery owns the fleet.
+- Do not hardcode device IPs — discovery finds the players.
 - Do not log secrets or full BluOS payloads.
 - Prefer small functions, typed interfaces, and tests for new paths.
 - Prefer slash (` / `) for compact meta separators in the UI (see `frontend/src/lib/meta.ts`) so signed values like dB stay readable.

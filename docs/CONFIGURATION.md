@@ -2,7 +2,7 @@
 
 All settings are environment variables with the `BSD_` prefix. Copy [.env.example](../.env.example) to `.env` in the **repo root** (or export variables in your shell) before starting the backend. The settings loader resolves the repo-root `.env` even when uvicorn is started from `backend/` (cwd-relative `.env` is also accepted as a fallback).
 
-Defaults are tuned for local development: bind localhost, discover via mDNS+LSDP, long-poll player Status, and throttle both outbound BluOS calls and inbound mutating API requests (plus expensive GETs such as `/api/v1/fleet/upgrades`).
+Default settings are for local development: bind localhost, discover via mDNS+LSDP, long-poll player Status, and throttle both outbound BluOS calls and inbound mutating API requests (plus expensive GETs such as `/api/v1/fleet/upgrades`).
 
 Local UI is Vite on **port 8765** (`make run` / `frontend` `npm run dev`). CORS defaults match that origin. The API defaults to **port 8000**.
 

@@ -1,6 +1,6 @@
 # Releasing
 
-Releases are fully automated with [release-please](https://github.com/googleapis/release-please). Versions, `CHANGELOG.md`, git tags, and GitHub Releases are derived from commit messages — none are edited or run by hand.
+Releases are fully automated with [release-please](https://github.com/googleapis/release-please). Versions, `CHANGELOG.md`, git tags, and GitHub Releases are derived from commit messages — nobody edits or creates them by hand.
 
 This project is a local LAN dashboard (not published to PyPI or npm). A release is the git tag + GitHub Release notes only.
 
@@ -20,7 +20,7 @@ This project is a local LAN dashboard (not published to PyPI or npm). A release 
 4. **release-please** opens or updates a **Release PR** titled `chore(main): release X.Y.Z`. It bumps versions in `.release-please-manifest.json`, `backend`/`frontend` package metadata, and appends to `CHANGELOG.md`. Multiple code PRs merged before a release are batched into one Release PR.
 5. Merging the Release PR triggers `release.yml` again, which creates the `vX.Y.Z` git tag and publishes a GitHub Release.
 
-A release therefore reduces to: merge the code PR(s), approve the Release PR's checks, then merge the Release PR.
+To ship a release: merge the code PR(s), approve the Release PR's checks, then merge the Release PR.
 
 To force a version (for example **1.0.0** instead of the next 0.x minor), put this footer on the squash-merged commit:
 
@@ -40,7 +40,7 @@ The Release PR is authored by `github-actions[bot]`, because `release.yml` passe
 - The approval does not stick. It is needed on every release, and again whenever release-please updates an open Release PR.
 - **Merging without approving turns the runs red.** They finalise as `failure` with zero jobs and no logs. That means nobody approved them, not that anything broke.
 
-This gate arrived with GitHub's [bot-created pull requests change](https://github.blog/changelog/2026-06-11-bot-created-pull-requests-can-run-workflows-if-approved/) and reached these repos in late August 2026. It applies to same-repo branches, not just forks, and has no repository-level opt-out. The only way to remove the step is to author the Release PR as a different identity, which needs a GitHub App or a PAT. Neither is set up here, and the click is cheaper.
+GitHub added this approval step in its [bot-created pull requests change](https://github.blog/changelog/2026-06-11-bot-created-pull-requests-can-run-workflows-if-approved/), and these repos got it in late August 2026. It applies to same-repo branches, not just forks, and has no repository-level opt-out. The only way to remove the step is to author the Release PR as a different identity, which needs a GitHub App or a PAT. This repo uses neither, and the click is cheaper.
 
 ## Branch protection
 
