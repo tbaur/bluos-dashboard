@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.2](https://github.com/tbaur/bluos-dashboard/compare/v1.1.1...v1.1.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* keep fleet status, discovery, and covers in step with the players ([8de8c0c](https://github.com/tbaur/bluos-dashboard/commit/8de8c0cbb2bd8b2ce00a750546a2010caa61c1f8))
+
 ## [1.1.1](https://github.com/tbaur/bluos-dashboard/compare/v1.1.0...v1.1.1) (2026-09-21)
 
 
