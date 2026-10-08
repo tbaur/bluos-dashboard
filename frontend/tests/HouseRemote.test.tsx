@@ -144,8 +144,11 @@ describe('HouseRemote', () => {
     renderRemote();
     expect(screen.getByText('Sapana — Artist')).toBeInTheDocument();
     expect(screen.getByText('Night')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '2 speakers' })).toBeInTheDocument();
     expect(screen.getByText('Hallway')).toBeInTheDocument();
     expect(screen.getByText('Kitchen')).toBeInTheDocument();
+    expect(screen.getByText('Lead')).toBeInTheDocument();
+    expect(document.querySelector('.house-roster-role')).toHaveTextContent('Lead');
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause house stream' }));
     await waitFor(() => expect(toggle).toHaveBeenCalledWith('1'));
@@ -288,6 +291,131 @@ describe('HouseRemote', () => {
     expect(actions.closest('.house-remote-foot')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Stop all' })).toBeInTheDocument();
+  });
+
+  it('keeps direct players on the house stream when only part of it is synced', () => {
+    useFleetStore.setState({
+      devices: [
+        player({
+          id: '1',
+          name: 'Front Bedroom',
+          state: 'play',
+          sync_role: 'primary',
+          track: 'Joni',
+          artist: 'Moomin',
+          volume: 40,
+        }),
+        player({
+          id: '2',
+          name: 'Hallway',
+          state: 'stream',
+          sync_role: 'synced',
+          master: '10.0.0.1:11000',
+          track: 'Joni',
+          artist: 'Moomin',
+          volume: 40,
+        }),
+        ...['Kitchen', 'Living Room', 'Office', 'Patio', 'Den'].map((name, index) =>
+          player({
+            id: String(index + 3),
+            name,
+            state: 'play',
+            sync_role: 'standalone',
+            track: 'Joni',
+            artist: 'Moomin',
+            volume: 18,
+          }),
+        ),
+      ],
+      sync: {
+        groups: [
+          {
+            primary_id: '1',
+            primary_name: 'Front Bedroom',
+            primary_ip: '10.0.0.1',
+            group: '',
+            slave_ids: ['2'],
+            slave_names: ['Hallway'],
+          },
+        ],
+        standalone_ids: ['3', '4', '5', '6', '7'],
+      },
+    });
+    renderRemote();
+    expect(screen.getByRole('button', { name: '7 speakers' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Also playing' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Direct')).toHaveLength(5);
+  });
+
+  it('shows three other streams and leaves the rest as text', () => {
+    const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
+    useFleetStore.setState({
+      devices: names.map((name, index) =>
+        player({
+          id: String(index + 1),
+          name,
+          state: 'play',
+          track: name,
+          artist: 'Artist',
+          image: `http://art/${name}.jpg`,
+        }),
+      ),
+      sync: { groups: [], standalone_ids: names.map((_, index) => String(index + 1)) },
+    });
+    renderRemote();
+    expect(screen.getByRole('region', { name: 'Also playing' })).toBeInTheDocument();
+    expect(screen.getByText('3 other streams + 2 more')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Artist/ })).toHaveLength(3);
+    expect(screen.queryByRole('link', { name: /3 streams/ })).not.toBeInTheDocument();
+  });
+
+  it('moves the other-stream hover with playback', () => {
+    let now = 10_000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    try {
+      useFleetStore.setState({
+        devices: [
+          player({
+            id: '1',
+            name: 'Hallway',
+            state: 'play',
+            track: 'House',
+            artist: 'Artist',
+            secs: 30,
+            totlen: 240,
+            can_seek: true,
+          }),
+          player({
+            id: '2',
+            name: 'Kitchen',
+            state: 'play',
+            service: 'Radio',
+            track: 'Other',
+            artist: 'Artist',
+            secs: 12,
+            totlen: 464,
+          }),
+        ],
+        sync: { groups: [], standalone_ids: ['1', '2'] },
+      });
+      renderRemote();
+      const fill = document.querySelector('.house-also-pop .dossier-progress-fill');
+      expect(screen.getByText('0:12')).toBeInTheDocument();
+      expect(fill).toHaveStyle({ transform: `scaleX(${12 / 464})` });
+      now = 12_400;
+      frames.at(-1)?.(now);
+      expect(screen.getByText('0:14')).toBeInTheDocument();
+      expect(fill).toHaveStyle({ transform: `scaleX(${14.4 / 464})` });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
   });
 
   it('cycles repeat off → all → one', async () => {

@@ -1,17 +1,28 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { api } from '@/api/client';
-import type { PlayerStatus } from '@/api/types';
+import type { PlayerStatus, SyncState } from '@/api/types';
 import { SeekBar } from '@/components/SeekBar';
 import { StickyArt } from '@/components/StickyArt';
 import { playerArtSrc } from '@/lib/artwork';
+import { usePlaybackPaint } from '@/hooks/usePlaybackPaint';
 import { useStableHouseStatus } from '@/hooks/useStableHouseStatus';
 import {
   fleetHasActivePlayback,
   houseStatusLine,
   houseTransportTargets,
+  type HouseStreamSource,
 } from '@/lib/fleetStatus';
-import { META_SEP } from '@/lib/meta';
+import { formatClock } from '@/lib/clock';
+import { clampPlayback, playbackProgress } from '@/lib/playbackClock';
+import {
+  ALSO_PLAYING_VISIBLE,
+  alsoPlayingMeta,
+  otherStreams,
+  speakerRoster,
+  streamPlaceLabel,
+  type SpeakerRosterRow,
+} from '@/lib/houseRoster';
 import { useFleetStore } from '@/store/fleetStore';
 
 function IconPrev() {
@@ -161,7 +172,11 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
   const totlen = lead?.totlen ?? 0;
   const secs = lead?.secs ?? 0;
   const albumLine = focused?.album && focused.album !== focused.primary ? focused.album : '';
-  const rooms = focused?.roomNames ?? [];
+  const roster = focused ? speakerRoster(focused, devices, sync) : [];
+  const place = streamPlaceLabel(roster.length, roster[0]?.name ?? '');
+  const others = focused ? otherStreams(status.sources, focused.key) : [];
+  const alsoVisible = others.slice(0, ALSO_PLAYING_VISIBLE);
+  const alsoMeta = alsoPlayingMeta(others.length);
 
   const run = (key: string, action: () => Promise<unknown>) => {
     setBusy(key);
@@ -241,13 +256,19 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
   const repeatLabel =
     repeatMode === 1 ? 'Repeat all' : repeatMode === 2 ? 'Repeat one' : 'Repeat off';
 
+  const showAlsoPlaying = showAlso(alsoVisible, alsoMeta);
+
   return (
+    <div
+      className={`house-remote-stack house-remote-stack-${variant}`}
+      data-art={showNowPlaying ? 'true' : 'false'}
+      data-also={showAlsoPlaying ? 'true' : 'false'}
+    >
     <section
       className={`fleet-bar-panel house-remote house-remote-${variant}`}
       aria-labelledby="fleet-actions-heading"
       data-idle={status.isIdle ? 'true' : 'false'}
       data-art={showNowPlaying ? 'true' : 'false'}
-      data-dominant={status.hasDominantStream ? 'true' : 'false'}
       data-paused={status.isPaused ? 'true' : 'false'}
     >
       <div className="house-remote-body">
@@ -310,38 +331,21 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
               {focused?.detail || status.detail}
             </p>
           ) : null}
-          {rooms.length > 0 ? (
-            <ul className="house-remote-rooms" aria-label="Rooms on this stream">
-              {rooms.slice(0, 6).map((room) => (
-                <li key={room}>{room}</li>
-              ))}
-              {rooms.length > 6 ? <li>+{rooms.length - 6}</li> : null}
-            </ul>
-          ) : null}
         </div>
       </div>
 
-      {mixed ? (
-        <div className="house-remote-sources" role="tablist" aria-label="House sources">
-          {status.sources.map((source) => (
-            <button
-              key={source.key}
-              type="button"
-              role="tab"
-              aria-selected={focused?.key === source.key}
-              className={focused?.key === source.key ? 'house-source is-active' : 'house-source'}
-              onClick={() => setFocusKey(source.key)}
-            >
-              <span className="house-source-title">{source.primary}</span>
-              <span className="house-source-rooms">
-                {source.roomNames.slice(0, 2).join(META_SEP)}
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-
       <div className="house-remote-foot">
+        {showNowPlaying && place ? (
+          <div className="house-where">
+            <button type="button" className="house-where-chip">
+              {place}
+            </button>
+            <div className="house-roster-pop">
+              <p className="house-roster-kicker">In this group</p>
+              <SpeakerRoster rows={roster} />
+            </div>
+          </div>
+        ) : null}
         {showNowPlaying && totlen > 0 ? (
           <SeekBar
             key={lead?.id ?? 'house-seek'}
@@ -461,5 +465,125 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
         </p>
       </div>
     </section>
+
+      {showAlsoPlaying ? (
+        <section className="house-also" aria-label="Also playing">
+          <div className="house-also-head">
+            <p className="house-also-count">{alsoMeta}</p>
+          </div>
+          <div className="house-also-list">
+            {alsoVisible.map((source) => (
+              <AlsoStream
+                key={source.key}
+                source={source}
+                devices={devices}
+                sync={sync}
+                onFocus={() => setFocusKey(source.key)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function showAlso(visible: { length: number }, meta: string): boolean {
+  return visible.length > 0 && meta.length > 0;
+}
+
+function SpeakerRoster({ rows }: { rows: SpeakerRosterRow[] }) {
+  return (
+    <ul className="house-roster">
+      {rows.map((row) => (
+        <li key={row.id}>
+          <span className="house-roster-name">{row.name}</span>
+          <span className="house-roster-role">{row.roleLabel}</span>
+          <span className={row.muted ? 'house-roster-vol is-muted' : 'house-roster-vol'}>
+            {row.muted ? 'Muted' : row.volume}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AlsoStream({
+  source,
+  devices,
+  sync,
+  onFocus,
+}: {
+  source: HouseStreamSource;
+  devices: PlayerStatus[];
+  sync: SyncState | null;
+  onFocus: () => void;
+}) {
+  const rows = speakerRoster(source, devices, sync);
+  const place = streamPlaceLabel(rows.length, rows[0]?.name ?? '');
+  const lead = devices.find((device) => device.id === source.leadId);
+  const album = source.album && source.album !== source.primary ? source.album : '';
+  const totlen = lead?.totlen ?? 0;
+  const playing = lead?.state === 'play' || lead?.state === 'stream';
+  const timeRef = useRef<HTMLSpanElement>(null);
+  const fillRef = useRef<HTMLDivElement>(null);
+  const lengthRef = useRef(totlen);
+  useLayoutEffect(() => {
+    lengthRef.current = totlen;
+  });
+  usePlaybackPaint(lead?.secs ?? 0, playing && totlen > 0, (raw) => {
+    const length = lengthRef.current;
+    const position = clampPlayback(raw, length);
+    if (timeRef.current) timeRef.current.textContent = formatClock(position);
+    if (fillRef.current) {
+      fillRef.current.style.transform = `scaleX(${playbackProgress(position, length)})`;
+    }
+    return position;
+  });
+  return (
+    <div className="house-also-tile">
+      <button type="button" className="house-also-open" onClick={onFocus}>
+        <StickyArt
+          src={source.leadId ? playerArtSrc(source.leadId, source.image) : ''}
+          className="house-also-thumb"
+          empty={<span className="house-also-thumb house-also-thumb-empty" aria-hidden="true" />}
+        />
+        <span className="house-also-copy">
+          <span className="house-also-place">{place}</span>
+          <span className="house-also-title">{source.primary}</span>
+        </span>
+      </button>
+      <div className="house-also-pop">
+        <div className="house-also-pop-top">
+          <StickyArt
+            src={source.leadId ? playerArtSrc(source.leadId, source.image) : ''}
+            className="house-also-pop-art"
+            empty={<span className="house-also-pop-art house-also-thumb-empty" aria-hidden="true" />}
+          />
+          <div>
+            <p className="house-roster-kicker">{rows.length > 1 ? 'Group' : 'Player'}</p>
+            <p className="house-also-pop-title">{source.primary}</p>
+            {album ? <p className="house-also-pop-sub">{album}</p> : null}
+            {totlen > 0 ? (
+              <p className="house-also-pop-sub">
+                {source.detail ? `${source.detail} · ` : null}
+                <span ref={timeRef} />
+                {` / ${formatClock(totlen)}`}
+              </p>
+            ) : source.detail ? (
+              <p className="house-also-pop-sub">{source.detail}</p>
+            ) : null}
+          </div>
+        </div>
+        {totlen > 0 ? (
+          <div className="house-also-pop-seek" aria-hidden="true">
+            <div className="dossier-progress-track">
+              <div ref={fillRef} className="dossier-progress-fill" />
+            </div>
+          </div>
+        ) : null}
+        <SpeakerRoster rows={rows} />
+      </div>
+    </div>
   );
 }
