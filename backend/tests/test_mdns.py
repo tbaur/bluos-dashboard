@@ -94,10 +94,10 @@ def test_standing_browser_resolves_off_the_callback() -> None:
                 time.sleep(0.05)
             assert found == ["192.168.1.50:11000"]
             browser._on_change(
-                zc,
-                "_musc._tcp.local.",
-                "Node._musc._tcp.local.",
-                ServiceStateChange.Removed,
+                zeroconf=zc,
+                service_type="_musc._tcp.local.",
+                name="Node._musc._tcp.local.",
+                state_change=ServiceStateChange.Removed,
             )
             assert browser.endpoints() == []
         finally:

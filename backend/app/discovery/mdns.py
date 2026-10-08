@@ -148,11 +148,14 @@ class StandingMDNS:
 
     def _on_change(
         self,
-        _zeroconf: Zeroconf,
+        zeroconf: Zeroconf,
         service_type: str,
         name: str,
         state_change: ServiceStateChange,
     ) -> None:
+        # Zeroconf calls this with keyword arguments. The first parameter has
+        # to be named zeroconf or every browse dies with TypeError.
+        del zeroconf
         if state_change == ServiceStateChange.Removed:
             self.forget(name)
             return
