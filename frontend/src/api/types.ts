@@ -31,6 +31,8 @@ export interface PlayerStatus {
   device_class: string;
   mac: string;
   status: PlayerReachability;
+  /** Last good snapshot is still shown; the latest poll missed. */
+  stale?: boolean;
   state: PlayerState;
   service: string;
   service_id: string;

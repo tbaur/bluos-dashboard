@@ -117,6 +117,22 @@ async def test_api_token_required_when_configured(
 
         health = await http.get("/api/v1/healthz")
         assert health.status_code == 200
+
+        session = await http.post(
+            "/api/v1/session",
+            headers={"Authorization": "Bearer secret-token", "X-BSD-Request": "1"},
+        )
+        assert session.status_code == 204
+        assert "bsd_session" in session.cookies
+
+        http.cookies.set("bsd_session", "secret-token")
+        cookie_post = await http.post("/api/v1/fleet/pause")
+        assert cookie_post.status_code == 401
+        cookie_ok = await http.post(
+            "/api/v1/fleet/pause",
+            headers={"X-BSD-Request": "1"},
+        )
+        assert cookie_ok.status_code != 401
     await client.aclose()
     get_settings.cache_clear()
 
@@ -226,7 +242,9 @@ async def test_settings_cache_invalidated_after_write(settings: Settings) -> Non
         0.0,
         DeviceSettingsResponse(page_id="audio", settings=[]),
     )
-    client._get = AsyncMock(return_value=b"<ok/>")  # type: ignore[method-assign]
+    from app.bluos.result import CallResult
+
+    client._control_get = AsyncMock(return_value=CallResult.success(b"<ok/>"))  # type: ignore[method-assign]
     ok = await client.set_device_setting(
         "192.168.1.20",
         "eq-treble",

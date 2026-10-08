@@ -6,6 +6,7 @@ import { DeviceSettingsPanel } from '@/components/DeviceSettingsPanel';
 import { PresenceBar } from '@/components/PresenceBar';
 import { SeekBar } from '@/components/SeekBar';
 import { StickyArt } from '@/components/StickyArt';
+import { playerArtSrc } from '@/lib/artwork';
 import { VolumeNudgeButtons } from '@/components/VolumeNudgeButtons';
 import {
   deviceEndpoint,
@@ -55,7 +56,6 @@ export function PlayerDetailPage() {
   const setToast = useFleetStore((s) => s.setToast);
   const health = useFleetStore((s) => s.health);
   const volumeCommitTimer = useRef<number | undefined>(undefined);
-  const nudgeBaseline = useRef(device?.volume ?? 0);
 
   const [queue, setQueue] = useState<QueueResponse | null>(null);
   const [inputs, setInputs] = useState<AudioInput[]>([]);
@@ -153,10 +153,6 @@ export function PlayerDetailPage() {
     return () => ac.abort();
   }, [id, advancedOpen]);
 
-  useEffect(() => {
-    if (device) nudgeBaseline.current = device.volume;
-  }, [device]);
-
   useEffect(
     () => () => {
       if (volumeCommitTimer.current) window.clearTimeout(volumeCommitTimer.current);
@@ -169,23 +165,11 @@ export function PlayerDetailPage() {
     const deviceId = device.id;
     useFleetStore.getState().holdVolume(deviceId);
     patchDevice(deviceId, { volume: level });
-    nudgeBaseline.current = level;
     if (volumeCommitTimer.current) window.clearTimeout(volumeCommitTimer.current);
     volumeCommitTimer.current = window.setTimeout(() => {
       volumeCommitTimer.current = undefined;
       void control(deviceId, () => api.setVolume(deviceId, level), { volume: level });
     }, 80);
-  };
-
-  const nudgeDeviceVolume = (level: number) => {
-    if (!device) return;
-    const deviceId = device.id;
-    const delta = level - nudgeBaseline.current;
-    if (delta === 0) return;
-    nudgeBaseline.current = level;
-    useFleetStore.getState().holdVolume(deviceId);
-    patchDevice(deviceId, { volume: level });
-    void control(deviceId, () => api.adjustVolume(deviceId, delta), { volume: level });
   };
 
   if (!device) {
@@ -269,7 +253,7 @@ export function PlayerDetailPage() {
         </div>
         <div className="dossier-header-badges">
           <span className="badge" data-role={device.status === 'online' ? 'primary' : undefined}>
-            {device.status}
+            {device.stale ? 'stale' : device.status}
           </span>
           {role !== 'standalone' && (
             <span className="badge" data-role={role}>
@@ -296,7 +280,7 @@ export function PlayerDetailPage() {
         <div className="dossier-now-grid">
           <div className="dossier-art" aria-hidden={!device.image}>
             <StickyArt
-              src={device.image}
+              src={playerArtSrc(device.id, device.image)}
               empty={<div className="dossier-art-empty">No artwork</div>}
             />
           </div>
@@ -465,7 +449,7 @@ export function PlayerDetailPage() {
         <div className="dossier-volume">
           <h3>Device volume</h3>
           <div className="volume-row">
-            <VolumeNudgeButtons value={device.volume} onChange={nudgeDeviceVolume} />
+            <VolumeNudgeButtons value={device.volume} onChange={commitDeviceVolume} />
             <input
               type="range"
               min={0}

@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { safeImageSrc } from '@/lib/artwork';
+import { playerArtSrc, safeImageSrc } from '@/lib/artwork';
 
 describe('safeImageSrc', () => {
-  it('allows player and CDN artwork over http(s)', () => {
-    expect(safeImageSrc('http://192.168.1.10:11000/Artwork?service=Local')).toBe(
-      'http://192.168.1.10:11000/Artwork?service=Local',
+  it('sends player artwork through the dashboard', () => {
+    expect(playerArtSrc('player-1', 'http://192.168.1.10:11000/Artwork?service=Local')).toBe(
+      '/api/v1/devices/player-1/art',
     );
-    expect(safeImageSrc('https://cdn.example.com/a.jpg')).toBe(
-      'https://cdn.example.com/a.jpg',
-    );
+    expect(safeImageSrc('http://192.168.1.10:11000/Artwork?service=Local')).toBe('');
+    expect(safeImageSrc('https://cdn.example.com/a.jpg')).toBe('');
   });
 
   it('allows same-origin paths', () => {

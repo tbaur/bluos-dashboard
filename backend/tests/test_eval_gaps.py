@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -178,6 +179,8 @@ async def test_sync_remove_resolves_orphan_primary_id(
     app, client, _, poller = await app_with_players(
         settings, monkeypatch, players=players
     )
+    app.state.app_state.discovery._grace_endpoints["gone"] = master_ep
+    app.state.app_state.discovery._grace_until["gone"] = time.time() + 60
     client.remove_sync_slave = AsyncMock(return_value=True)  # type: ignore[method-assign]
     client.stop = AsyncMock(return_value=True)  # type: ignore[method-assign]
     poller.refresh_one = AsyncMock(return_value=None)  # type: ignore[method-assign]

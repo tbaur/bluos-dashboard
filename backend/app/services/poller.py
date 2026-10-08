@@ -49,6 +49,26 @@ class StatusPoller:
         # exception class name, safe to expose on the unauthenticated /readyz.
         self.last_error: str | None = None
         self.last_error_kind: str | None = None
+        self.last_control_failure_kind: str | None = None
+
+    def is_wedged(self) -> bool:
+        """True when the reconcile task has died or stopped ticking."""
+        task = self._task
+        if task is not None and task.done() and not self._stop.is_set():
+            return True
+        if self.last_poll_at is None:
+            return False
+        return time.time() - self.last_poll_at > 15
+
+    def presence_counts(self) -> tuple[int, int]:
+        devices = self.discovery.snapshot.devices
+        stale = sum(1 for device in devices if device.stale)
+        slow = sum(
+            1
+            for device in devices
+            if self._failures.get(device.id, 0) >= self.settings.circuit_failure_threshold
+        )
+        return stale, slow
 
     def start(self) -> None:
         if self._task and not self._task.done():
@@ -206,11 +226,21 @@ class StatusPoller:
                 raise
             return
         except Exception as exc:
-            player = self._apply_poll_result(device, exc)
-            self._forget_tags(device.id)
+            player = self._mark_unreachable(device, exc)
         else:
-            self._remember_tags(device.id, snap)
-            player = self._apply_poll_result(device, snap.player)
+            if snap.player.status == "online":
+                self._remember_tags(device.id, snap)
+                player = snap.player
+                if player.stale:
+                    player = player.model_copy(update={"stale": False})
+                self._record_result(player)
+            else:
+                player = self._mark_unreachable(
+                    device,
+                    RuntimeError(snap.player.status or "unreachable"),
+                )
+        if player.status == "offline":
+            self._forget_tags(device.id)
         await self.discovery.update_device(player)
         stored = self.discovery.get_device(device.id) or player
         self.last_poll_at = time.time()
@@ -260,21 +290,55 @@ class StatusPoller:
             long_poll_seconds=wait,
         )
 
-    def _apply_poll_result(self, device: PlayerStatus, result: object) -> PlayerStatus:
-        if isinstance(result, Exception):
-            logger.debug("poll_device_error id=%s err=%s", device.id, result)
-            offline = device.model_copy(
-                update={
-                    "status": "offline",
-                    "consecutive_failures": device.consecutive_failures + 1,
-                }
+    def _mark_unreachable(self, device: PlayerStatus, exc: BaseException) -> PlayerStatus:
+        """Keep the last good snapshot until the circuit threshold, then go offline.
+
+        The health log still opens a drop on the first miss. The room row stays
+        up, marked stale, so one blip does not look like the player left.
+        """
+        kind = type(exc).__name__
+        logger.debug("poll_device_error id=%s err=%s", device.id, exc)
+        prev_failures = self._failures.get(device.id, 0)
+        failures = prev_failures + 1
+        self._failures[device.id] = failures
+        offline = failures >= self.settings.circuit_failure_threshold
+        delay = (
+            self.settings.circuit_slow_poll_seconds
+            if offline
+            else self.settings.poll_interval
+        )
+        self._next_due[device.id] = time.monotonic() + delay
+        player = device.model_copy(
+            update={
+                "status": "offline" if offline else "online",
+                "stale": not offline,
+                "consecutive_failures": failures,
+            }
+        )
+        if failures == 1:
+            logger.info(
+                "player_stale",
+                extra={
+                    "device_id": device.id,
+                    "device_ip": device.endpoint,
+                    "failure_kind": kind,
+                },
             )
-            self._record_result(offline)
-            return offline
-        if isinstance(result, PlayerStatus):
-            self._record_result(result)
-            return result
-        raise TypeError(f"unexpected poll result: {type(result)!r}")
+        if offline:
+            logger.info(
+                "player_offline",
+                extra={
+                    "device_id": device.id,
+                    "device_ip": device.endpoint,
+                    "failure_kind": kind,
+                },
+            )
+        self.health.observe(
+            player.model_copy(update={"status": "offline"}),
+            previous_failures=prev_failures,
+            now=time.time(),
+        )
+        return player
 
     def _record_result(self, player: PlayerStatus) -> None:
         now = time.monotonic()

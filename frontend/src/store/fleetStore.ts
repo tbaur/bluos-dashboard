@@ -18,6 +18,8 @@ const MUTE_HOLD_MS = 4500;
 const HOUSE_CATCHUP_MS = 10_000;
 
 let houseCatchupTimer: number | undefined;
+/** Latest control per device. An older failure must not roll back a newer command. */
+const controlEpoch = new Map<string, number>();
 
 interface FleetState {
   devices: PlayerStatus[];
@@ -787,6 +789,8 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   },
 
   control: async (deviceId, action, optimistic) => {
+    const epoch = (controlEpoch.get(deviceId) ?? 0) + 1;
+    controlEpoch.set(deviceId, epoch);
     const previous = get().devices.find((d) => d.id === deviceId);
     const volumeOnly = isVolumeOnlyPatch(optimistic);
     const mutePatch = isMutePatch(optimistic);
@@ -815,7 +819,8 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         get().holdVolume(deviceId);
       }
     } catch (err) {
-      if (previous) {
+      // A newer nudge or skip owns the row. Reverting this attempt would undo it.
+      if (previous && controlEpoch.get(deviceId) === epoch) {
         get().patchDevice(deviceId, previous);
       }
       const message =

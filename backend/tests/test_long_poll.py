@@ -233,11 +233,16 @@ async def test_poller_second_cycle_long_polls_status(settings: Settings) -> None
 @pytest.mark.asyncio
 @respx.mock
 async def test_poller_clears_etag_when_player_goes_offline(settings: Settings) -> None:
+    status_calls = {"n": 0}
+
+    def status_response(_request: httpx.Request) -> httpx.Response:
+        status_calls["n"] += 1
+        if status_calls["n"] == 1:
+            return httpx.Response(200, content=STATUS)
+        raise httpx.ConnectError("down")
+
     respx.get(url__regex=r"http://192\.168\.1\.20:11000/Status.*").mock(
-        side_effect=[
-            httpx.Response(200, content=STATUS),
-            httpx.ConnectError("down"),
-        ]
+        side_effect=status_response
     )
     respx.get("http://192.168.1.20:11000/SyncStatus").mock(
         return_value=httpx.Response(200, content=SYNC_STATUS)
@@ -248,6 +253,13 @@ async def test_poller_clears_etag_when_player_goes_offline(settings: Settings) -
         await poller._poll_once()
         assert "p1" in poller._status_etags
         await poller._poll_once()
+        missed = discovery.snapshot.devices[0]
+        assert missed.status == "online"
+        assert missed.stale is True
+        assert missed.track == "Song Title"
+        assert "p1" in poller._status_etags
+        for _ in range(settings.circuit_failure_threshold - 1):
+            await poller._poll_once()
         assert discovery.snapshot.devices[0].status == "offline"
         assert "p1" not in poller._status_etags
         drops = poller.health.snapshot().drops

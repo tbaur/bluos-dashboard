@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
+import httpx
+
+from app.bluos.result import CallResult
 from app.bluos.status import BluOSStatusMixin
 from app.bluos.xml import safe_parse_xml, text
 from app.models import AudioInput, BluetoothResponse, Preset, QueueItem, QueueResponse
+from app.validators import sanitize_ip
 
 
 class BluOSMediaMixin(BluOSStatusMixin):
@@ -81,18 +85,13 @@ class BluOSMediaMixin(BluOSStatusMixin):
 
     async def clear_queue(self, ip: str) -> bool:
         """Clear play queue via BluOS v1.7 GET /Clear."""
-        return (await self._get(ip, "/Clear", control=True)) is not None
+        return self._ok(await self._control_get(ip, "/Clear"))
 
     async def move_queue_item(self, ip: str, from_index: int, to_index: int) -> bool:
         """Move queue track via BluOS v1.7 GET /Move?old=&new=."""
-        return (
-            await self._get(
-                ip,
-                "/Move",
-                query=f"old={from_index}&new={to_index}",
-                control=True,
-            )
-        ) is not None
+        return self._ok(
+            await self._control_get(ip, "/Move", query=f"old={from_index}&new={to_index}")
+        )
 
     async def get_inputs(self, ip: str) -> list[AudioInput] | None:
         """List capture inputs via BluOS v1.7 Settings?id=capture."""
@@ -166,9 +165,9 @@ class BluOSMediaMixin(BluOSStatusMixin):
                 return False
             type_index = match.id
         encoded = quote(type_index, safe="-")
-        return (
-            await self._get(ip, "/Play", query=f"inputTypeIndex={encoded}", control=True)
-        ) is not None
+        return self._ok(
+            await self._control_get(ip, "/Play", query=f"inputTypeIndex={encoded}")
+        )
 
     async def get_bluetooth_info(self, ip: str) -> BluetoothResponse | None:
         """Probe Bluetooth from capture settings (no /AudioModes GET in v1.7).
@@ -202,10 +201,10 @@ class BluOSMediaMixin(BluOSStatusMixin):
 
     async def set_bluetooth_mode(self, ip: str, mode: int) -> bool:
         if mode not in (0, 1, 2, 3):
-            return False
-        return (
-            await self._get(ip, "/audiomodes", query=f"bluetoothAutoplay={mode}", control=True)
-        ) is not None
+            return self._ok(CallResult.failure("rejected", "invalid bluetooth mode"))
+        return self._ok(
+            await self._control_get(ip, "/audiomodes", query=f"bluetoothAutoplay={mode}")
+        )
 
     async def get_presets(self, ip: str) -> list[Preset] | None:
         # Read path: do not burn the control rate slot / single-attempt budget.
@@ -226,8 +225,49 @@ class BluOSMediaMixin(BluOSStatusMixin):
 
     async def play_preset(self, ip: str, preset_id: int) -> bool:
         if preset_id < 1:
-            return False
-        return (
-            await self._get(ip, "/Preset", query=f"id={preset_id}", control=True)
-        ) is not None
+            return self._ok(CallResult.failure("rejected", "invalid preset"))
+        return self._ok(await self._control_get(ip, "/Preset", query=f"id={preset_id}"))
+
+    async def fetch_artwork(self, endpoint: str, image_url: str) -> tuple[bytes, str] | None:
+        """Fetch cover art from the player that owns it.
+
+        The browser never opens the player URL. An image host that is not that
+        player is refused, so a player-supplied URL cannot steer the page.
+        """
+        resolved = self._resolve_target(endpoint)
+        if not resolved:
+            return None
+        ip, port = resolved
+        if not self.settings.is_allowed_device_ip(ip):
+            return None
+        raw = (image_url or "").strip()
+        if not raw or raw.startswith("data:"):
+            return None
+        if raw.startswith("/"):
+            url = f"http://{ip}:{port}{raw}"
+        else:
+            parsed = urlparse(raw)
+            host = sanitize_ip(parsed.hostname or "")
+            image_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            if parsed.scheme not in {"http", "https"} or host != ip or image_port != port:
+                return None
+            url = raw
+        try:
+            async with self._sem:
+                response = await self._follow_get(
+                    ip,
+                    url,
+                    timeout=self.settings.device_http_timeout,
+                )
+        except (httpx.TimeoutException, httpx.TransportError, OSError):
+            return None
+        if response is None or response.status_code >= 400:
+            return None
+        body = response.content
+        if not body or len(body) > self.settings.max_xml_size:
+            return None
+        media = response.headers.get("content-type", "image/jpeg").split(";", 1)[0].strip().lower()
+        if not media.startswith("image/"):
+            return None
+        return body, media
 

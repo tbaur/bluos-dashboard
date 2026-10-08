@@ -40,6 +40,8 @@ class JsonFormatter(logging.Formatter):
             "scoped",
             "redirect_host",
             "url",
+            "failure_kind",
+            "failure_detail",
         ):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)

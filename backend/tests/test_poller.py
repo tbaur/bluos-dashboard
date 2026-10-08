@@ -172,12 +172,20 @@ async def test_poll_once_marks_exception_offline(
     monkeypatch.setattr(client, "load_player", boom)
     await poller._poll_once()
     updated = discovery.snapshot.devices[0]
-    assert updated.status == "offline"
+    # One miss keeps the room up. The circuit threshold (2 in this fixture) flips it offline.
+    assert updated.status == "online"
+    assert updated.stale is True
+    assert updated.name == "K"
     assert updated.consecutive_failures == 1
     drops = poller.health.snapshot().drops
     assert len(drops) == 1
     assert drops[0].device_id == "p1"
     assert drops[0].ended_at is None
+    await poller._poll_once()
+    offline = discovery.snapshot.devices[0]
+    assert offline.status == "offline"
+    assert offline.stale is False
+    assert offline.name == "K"
     await client.aclose()
 
 

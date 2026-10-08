@@ -4,6 +4,7 @@ import { api } from '@/api/client';
 import type { PlayerStatus } from '@/api/types';
 import { SeekBar } from '@/components/SeekBar';
 import { StickyArt } from '@/components/StickyArt';
+import { playerArtSrc } from '@/lib/artwork';
 import { useStableHouseStatus } from '@/hooks/useStableHouseStatus';
 import {
   fleetHasActivePlayback,
@@ -261,7 +262,11 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
             }
           >
             <StickyArt
-              src={focused?.image ?? ''}
+              src={
+                focused?.leadId
+                  ? playerArtSrc(focused.leadId, focused.image)
+                  : ''
+              }
               className="house-remote-art-img"
               empty={
                 <span className="house-remote-art-empty" aria-hidden="true">

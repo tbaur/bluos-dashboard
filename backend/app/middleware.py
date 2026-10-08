@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CSP = (
     "default-src 'self'; "
     "connect-src 'self'; "
-    "img-src 'self' data: http:; "
+    "img-src 'self' data:; "
     "style-src 'self' 'unsafe-inline'; "
     "script-src 'self'; "
     "frame-ancestors 'none'"
@@ -193,6 +193,17 @@ def _query_token(query_string: bytes) -> bytes | None:
     return None
 
 
+def _cookie_value(scope: Scope, name: bytes) -> bytes | None:
+    raw = _header_raw(scope, b"cookie")
+    if not raw:
+        return None
+    for part in raw.split(b";"):
+        key, sep, value = part.strip().partition(b"=")
+        if sep and key == name:
+            return unquote_to_bytes(value)
+    return None
+
+
 def _authorized(scope: Scope, expected: bytes) -> bool:
     """Compare tokens as bytes so a non-ASCII credential cannot raise."""
     auth = _header_raw(scope, b"authorization")
@@ -202,7 +213,13 @@ def _authorized(scope: Scope, expected: bytes) -> bool:
     header_token = _header_raw(scope, b"x-api-token")
     if header_token and hmac.compare_digest(header_token.strip(), expected):
         return True
-    # EventSource cannot set Authorization — allow ?token= on SSE only.
+    cookie = _cookie_value(scope, b"bsd_session")
+    if cookie is not None and hmac.compare_digest(cookie, expected):
+        # A foreign site can send the cookie. It cannot set this header.
+        if scope.get("method") == "POST":
+            return _header_raw(scope, b"x-bsd-request") == b"1"
+        return True
+    # Older EventSource clients may still pass ?token= on SSE.
     path = scope.get("path", "")
     if path == "/api/v1/events":
         candidate = _query_token(scope.get("query_string", b"") or b"")

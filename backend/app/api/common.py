@@ -11,11 +11,19 @@ from fastapi import Depends, Response, status
 
 from app.api.deps import get_state
 from app.api.errors import AppError
+from app.bluos.result import take_control_result
 from app.capabilities import model_has_bluetooth
 from app.models import FleetActionResponse, FleetVolumeResult, PlayerStatus, SyncRole
 from app.services.sync import build_sync_state, is_orphan_primary_id
 from app.state import AppState
-from app.validators import DEFAULT_BLUOS_PORT, parse_endpoint, sanitize_ip, validate_device_id
+from app.validators import (
+    DEFAULT_BLUOS_PORT,
+    normalize_bluos_mac,
+    parse_endpoint,
+    sanitize_endpoint,
+    sanitize_ip,
+    validate_device_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +48,7 @@ def chassis_representatives(devices: list[PlayerStatus]) -> list[PlayerStatus]:
     return list(by_ip.values())
 
 
-def require_device(state: AppState, device_id: str) -> str:
+async def require_device(state: AppState, device_id: str) -> str:
     """Return canonical BluOS endpoint (``ip:port``) for a known device id."""
     if not validate_device_id(device_id):
         raise AppError(400, "invalid_device_id", "Device id format is invalid")
@@ -57,23 +65,52 @@ def require_device(state: AppState, device_id: str) -> str:
             "control_during_grace",
             extra={"op": "resolve", "device_id": device_id, "device_ip": endpoint},
         )
+        await _confirm_grace_mac(state, device_id, endpoint)
     return endpoint
 
 
+async def _confirm_grace_mac(state: AppState, device_id: str, endpoint: str) -> None:
+    """Refuse a grace-period command when the host at that address is a different device.
+
+    A neighbor can already send traffic to whoever holds the address. This check
+    is so a click meant for a player does not follow a DHCP reuse.
+    """
+    expected = normalize_bluos_mac(state.discovery.grace_mac(device_id))
+    if not expected:
+        logger.info(
+            "grace_mac_unverified",
+            extra={"op": "resolve", "device_id": device_id, "device_ip": endpoint},
+        )
+        return
+    await begin_control(state, [device_id])
+    live = await state.client.get_player_status(endpoint, device_id=device_id)
+    live_mac = normalize_bluos_mac(live.mac)
+    if live.status != "online" or not live_mac or live_mac != expected:
+        state.discovery.clear_grace(device_id)
+        raise AppError(
+            409,
+            "grace_mac_mismatch",
+            "Player at the last address no longer matches",
+        )
+
+
 def allow_master_endpoint(state: AppState, endpoint: str) -> str:
-    """Validate a master endpoint that may not be in the discovered set."""
+    """Validate a master that this process has discovered or still holds in grace."""
     host = endpoint_host(endpoint, default_port=state.settings.bluos_port)
     if not host or not sanitize_ip(host):
         raise AppError(400, "invalid_master", "Master endpoint is invalid")
     if not state.settings.is_allowed_device_ip(host):
         raise AppError(403, "ip_not_allowed", "Device IP is outside the allowed range")
-    return endpoint
+    canonical = sanitize_endpoint(endpoint, default_port=state.settings.bluos_port)
+    if not canonical or not state.discovery.is_known_endpoint(canonical):
+        raise AppError(404, "device_not_found", "Master is not a discovered player")
+    return canonical
 
 
-def resolve_sync_master(state: AppState, master_id: str, slave_id: str) -> str:
+async def resolve_sync_master(state: AppState, master_id: str, slave_id: str) -> str:
     """Resolve primary endpoint for ungroup — including offline/orphan primaries."""
     if state.discovery.is_known_id(master_id):
-        return require_device(state, master_id)
+        return await require_device(state, master_id)
 
     snapshot = state.discovery.snapshot
     if is_orphan_primary_id(master_id):
@@ -151,7 +188,7 @@ async def begin_control(state: AppState, device_ids: Sequence[str]) -> None:
 
 
 async def run_control(state: AppState, device_id: str, op_name: str, coro: ControlOp) -> Response:
-    ip = require_device(state, device_id)
+    ip = await require_device(state, device_id)
     logger.info(
         "control_op",
         extra={"op": op_name, "device_id": device_id, "device_ip": ip},
@@ -159,9 +196,19 @@ async def run_control(state: AppState, device_id: str, op_name: str, coro: Contr
     await begin_control(state, [device_id])
     ok = await coro(ip)
     if not ok:
+        failure = take_control_result()
+        kind = failure.kind if failure else "failed"
+        detail = failure.detail if failure else ""
+        state.poller.last_control_failure_kind = kind
         logger.warning(
             "control_failed",
-            extra={"op": op_name, "device_id": device_id, "device_ip": ip},
+            extra={
+                "op": op_name,
+                "device_id": device_id,
+                "device_ip": ip,
+                "failure_kind": kind,
+                "failure_detail": detail,
+            },
         )
         raise AppError(502, "bluos_control_failed", f"BluOS {op_name} failed")
     schedule_refresh(state, device_id)
@@ -196,12 +243,18 @@ async def fleet_action(
         if ok:
             schedule_refresh(state, device_id)
         else:
+            failure = take_control_result()
+            kind = failure.kind if failure else "failed"
+            detail = failure.detail if failure else ""
+            state.poller.last_control_failure_kind = kind
             logger.warning(
                 "control_failed",
                 extra={
                     "op": f"fleet_{action}",
                     "device_id": device_id,
                     "device_ip": endpoint,
+                    "failure_kind": kind,
+                    "failure_detail": detail,
                 },
             )
         return FleetVolumeResult(device_id=device_id, name=name, ok=ok)

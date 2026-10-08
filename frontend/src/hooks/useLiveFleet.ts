@@ -12,9 +12,47 @@ interface FleetEvent {
 const MAX_RECONNECT_ATTEMPTS = 8;
 const OFFLINE_RETRY_MS = 60_000;
 
-function eventsUrl(): string {
-  if (!apiToken) return '/api/v1/events';
-  return `/api/v1/events?token=${encodeURIComponent(apiToken)}`;
+function eventHeaders(): Headers {
+  const headers = new Headers({
+    Accept: 'text/event-stream',
+    'X-BSD-Request': '1',
+  });
+  if (apiToken) headers.set('Authorization', `Bearer ${apiToken}`);
+  return headers;
+}
+
+async function readServerEvents(
+  response: Response,
+  onMessage: (event: FleetEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (!signal.aborted) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    let split = buffer.indexOf('\n\n');
+    while (split !== -1) {
+      const frame = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      const data = frame
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+      if (data) {
+        try {
+          onMessage(JSON.parse(data) as FleetEvent);
+        } catch {
+          // ignore malformed
+        }
+      }
+      split = buffer.indexOf('\n\n');
+    }
+  }
 }
 
 function connectWithBackoff(
@@ -23,45 +61,52 @@ function connectWithBackoff(
   signal: AbortSignal,
 ): void {
   let attempt = 0;
-  let source: EventSource | null = null;
   let timer: number | undefined;
+  let stream: AbortController | null = null;
 
   const cleanup = () => {
     if (timer) window.clearTimeout(timer);
-    source?.close();
+    stream?.abort();
   };
-
   signal.addEventListener('abort', cleanup);
+
+  const schedule = (delay: number) => {
+    timer = window.setTimeout(open, delay);
+  };
 
   const open = () => {
     if (signal.aborted) return;
     onState(attempt === 0 ? 'connecting' : 'reconnecting');
-    source = new EventSource(eventsUrl());
-    source.onopen = () => {
-      attempt = 0;
-      onState('live');
-    };
-    source.onmessage = (msg) => {
+    stream = new AbortController();
+    const linked = stream;
+    void (async () => {
       try {
-        onMessage(JSON.parse(msg.data) as FleetEvent);
-      } catch {
-        // ignore malformed
-      }
-    };
-    source.onerror = () => {
-      source?.close();
-      attempt += 1;
-      if (attempt >= MAX_RECONNECT_ATTEMPTS) {
-        onState('offline');
-        // Keep REST fallback running; retry SSE periodically instead of giving up.
+        const response = await fetch('/api/v1/events', {
+          headers: eventHeaders(),
+          credentials: 'include',
+          signal: linked.signal,
+        });
+        if (signal.aborted || linked.signal.aborted) return;
+        if (!response.ok) throw new Error(String(response.status));
         attempt = 0;
-        timer = window.setTimeout(open, OFFLINE_RETRY_MS);
-        return;
+        onState('live');
+        await readServerEvents(response, onMessage, linked.signal);
+        if (signal.aborted || linked.signal.aborted) return;
+        throw new Error('stream closed');
+      } catch {
+        if (signal.aborted || linked.signal.aborted) return;
+        attempt += 1;
+        if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+          onState('offline');
+          attempt = 0;
+          schedule(OFFLINE_RETRY_MS);
+          return;
+        }
+        onState('reconnecting');
+        const delay = Math.min(30_000, 1000 * 2 ** (attempt - 1)) + Math.random() * 250;
+        schedule(delay);
       }
-      onState('reconnecting');
-      const delay = Math.min(30_000, 1000 * 2 ** (attempt - 1)) + Math.random() * 250;
-      timer = window.setTimeout(open, delay);
-    };
+    })();
   };
 
   open();

@@ -18,17 +18,28 @@ async def events(request: Request, state: StateDep) -> StreamingResponse:
     keepalive = state.settings.sse_keepalive_seconds
 
     async def event_generator() -> AsyncIterator[str]:
-        # Initial snapshot
-        initial = json.dumps(
-            {
-                "type": "fleet",
-                "data": state.poller.fleet_payload(),
-            },
-            default=str,
-        )
-        yield f"data: {initial}\n\n"
+        # Subscribe first so a change during connect is queued, then copy the
+        # snapshot only once the queue is quiet. Replaying those queued events
+        # after the snapshot would paint an older volume on top of a newer one.
         queue = await state.events.subscribe()
         try:
+            initial = ""
+            for _ in range(8):
+                while True:
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                initial = json.dumps(
+                    {
+                        "type": "fleet",
+                        "data": state.poller.fleet_payload(),
+                    },
+                    default=str,
+                )
+                if queue.empty():
+                    break
+            yield f"data: {initial}\n\n"
             while True:
                 if await request.is_disconnected():
                     break

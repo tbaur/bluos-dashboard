@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from app.bluos.client import BluOSClient
 from app.config import Settings
 from app.discovery.lsdp import LSDPDevice, LSDPDiscovery
-from app.discovery.mdns import BLUOS_MDNS_SERVICES, MDNSDiscovery
+from app.discovery.mdns import BLUOS_MDNS_SERVICES, MDNSDiscovery, StandingMDNS
 from app.models import PlayerStatus
 from app.services.sync import drop_stale_follower_claims
 from app.validators import (
@@ -73,6 +73,8 @@ class DiscoveryService:
         self._snapshot = DiscoverySnapshot()
         self._grace_until: dict[str, float] = {}
         self._grace_endpoints: dict[str, str] = {}
+        self._grace_macs: dict[str, str] = {}
+        self.mdns = StandingMDNS()
 
     @property
     def _grace_ips(self) -> dict[str, str]:
@@ -97,6 +99,25 @@ class DiscoveryService:
         if device_id in self._snapshot.endpoints_by_id:
             return False
         return time.time() < self._grace_until.get(device_id, 0.0)
+
+    def is_known_endpoint(self, endpoint: str) -> bool:
+        """True when this process discovered the endpoint or still holds it in grace."""
+        canonical = sanitize_endpoint(endpoint, default_port=self.settings.bluos_port)
+        if not canonical:
+            return False
+        if canonical in self._snapshot.ids_by_endpoint:
+            return True
+        return canonical in self._grace_endpoints.values()
+
+    def grace_mac(self, device_id: str) -> str:
+        if not self.is_in_grace(device_id):
+            return ""
+        return self._grace_macs.get(device_id, "")
+
+    def clear_grace(self, device_id: str) -> None:
+        self._grace_until.pop(device_id, None)
+        self._grace_endpoints.pop(device_id, None)
+        self._grace_macs.pop(device_id, None)
 
     def resolve_endpoint(self, device_id: str) -> str | None:
         endpoint = self._snapshot.endpoints_by_id.get(device_id)
@@ -159,28 +180,56 @@ class DiscoveryService:
                     return self._snapshot
                 previous_ids = set(self._snapshot.endpoints_by_id)
                 previous_endpoints = dict(self._snapshot.endpoints_by_id)
+                previous_macs = {device.id: device.mac for device in self._snapshot.devices}
 
             endpoints, method_used = await self._discover_endpoints()
-            players = await self._enrich(endpoints)
+            # Membership comes from the browse. Playback state stays with the
+            # poller, so a short /Status during a held long-poll cannot delete
+            # a room or rewind a volume the poller already published.
+            async with self._data_lock:
+                live_endpoints = {device.endpoint for device in self._snapshot.devices}
+            to_enrich = [
+                endpoint for endpoint in endpoints if endpoint.endpoint not in live_endpoints
+            ]
+            enriched = await self._enrich(to_enrich)
+            enriched_by_endpoint = {player.endpoint: player for player in enriched}
             now = time.time()
 
             async with self._data_lock:
-                new_ids = {p.id for p in players}
+                live_by_endpoint = {device.endpoint: device for device in self._snapshot.devices}
+                players: list[PlayerStatus] = []
+                for endpoint in endpoints:
+                    current = live_by_endpoint.get(endpoint.endpoint)
+                    if current is not None:
+                        # A poll that landed during enrich wins over the copy we saw earlier.
+                        players.append(current)
+                        continue
+                    created = enriched_by_endpoint.get(endpoint.endpoint)
+                    if created is not None:
+                        players.append(created)
+
+                players = drop_stale_follower_claims(players)
+                new_ids = {player.id for player in players}
                 for missing in previous_ids - new_ids:
                     self._grace_until[missing] = now + self.settings.discovered_grace_ttl
                     grace_ep = previous_endpoints.get(missing)
                     if grace_ep:
                         self._grace_endpoints[missing] = grace_ep
+                    mac = previous_macs.get(missing, "")
+                    if mac:
+                        self._grace_macs[missing] = mac
+                    else:
+                        self._grace_macs.pop(missing, None)
                 for present in new_ids:
                     self._grace_until.pop(present, None)
                     self._grace_endpoints.pop(present, None)
+                    self._grace_macs.pop(present, None)
 
-                players = drop_stale_follower_claims(players)
-                endpoints_by_id = {p.id: p.endpoint for p in players}
-                ids_by_endpoint = {p.endpoint: p.id for p in players}
+                endpoints_by_id = {player.id: player.endpoint for player in players}
+                ids_by_endpoint = {player.endpoint: player.id for player in players}
                 self._snapshot = DiscoverySnapshot(
                     devices=players,
-                    endpoints={e.endpoint: e for e in endpoints},
+                    endpoints={endpoint.endpoint: endpoint for endpoint in endpoints},
                     discovered_at=now,
                     method_used=method_used,
                     endpoints_by_id=endpoints_by_id,
@@ -200,12 +249,13 @@ class DiscoveryService:
 
         run_mdns = method in ("mdns", "both")
         run_lsdp = method in ("lsdp", "both")
+        standing = self.mdns.endpoints() if run_mdns and self.mdns.running else []
 
         mdns_task = (
             asyncio.to_thread(
                 MDNSDiscovery(BLUOS_MDNS_SERVICES, self.settings.discovery_timeout).discover
             )
-            if run_mdns
+            if run_mdns and not standing
             else None
         )
         lsdp_task = (
@@ -214,7 +264,7 @@ class DiscoveryService:
             else None
         )
 
-        mdns_endpoints: list[str] = []
+        mdns_endpoints: list[str] = list(standing)
         lsdp_devices: list[LSDPDevice] = []
         if mdns_task is not None and lsdp_task is not None:
             mdns_endpoints, lsdp_devices = await asyncio.gather(mdns_task, lsdp_task)

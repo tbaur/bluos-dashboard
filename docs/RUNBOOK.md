@@ -93,6 +93,22 @@ Variable names and defaults: [CONFIGURATION.md](CONFIGURATION.md).
 - **Group all free rooms** / `POST /api/v1/sync/enable` attaches only standalones — existing groups are left alone.
 - **Ungroup all** / `POST /api/v1/sync/break` returns succeeded/failed counts; HTTP 502 only when every link removal fails.
 
+## Process
+
+Run one process. More than one uvicorn worker splits the fleet across processes that do not share discovery or the long-polls.
+
+A crash should start that same process again. Example:
+
+```ini
+[Service]
+WorkingDirectory=/opt/bluos-dashboard/backend
+EnvironmentFile=/opt/bluos-dashboard/.env
+ExecStart=/opt/bluos-dashboard/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+```
+
+After a restart the health log is empty, discovery runs again, and rooms stay stale or offline until the first successful long-poll. Readiness (`/api/v1/readyz`) reports `discovery_age_seconds`, `stale_count`, and `slow_poll_count`. It returns 503 when the poller task has stopped ticking. It does not include player names or addresses.
+
 ## Logs
 
 Stdout JSON logs include `request_id`. Every HTTP request (except SSE stream) emits `http_request` with method, path, status, and `duration_ms`. Control paths emit `control_op` / `control_failed` / `control_during_grace` with `op`, `device_id`, and `device_ip`. Fleet-wide actions log per-device results plus `fleet_action_complete` (`action`, `succeeded`, `failed`). Scoped fleet volume also logs `fleet_volume_targets` with `target_count` / `scoped`. Stop-after-ungroup warnings include `role` (`slave` / `primary`). Poller misses log `poll_device_error` / `device_watch_failed` / `poller_cycle_failed`. Correlate UI toast request IDs with log lines.

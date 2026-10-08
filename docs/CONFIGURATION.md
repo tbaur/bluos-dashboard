@@ -26,14 +26,14 @@ The backend only talks to discovered private IPs (see `BSD_ALLOW_NON_PRIVATE_IPS
 | `BSD_PORT` | `8000` | Bind port |
 | `BSD_LOG_LEVEL` | `INFO` | Log level |
 | `BSD_CORS_ORIGINS` | `http://127.0.0.1:8765,http://localhost:8765` | Allowed CORS origins (comma-separated) |
-| `BSD_API_TOKEN` | *(empty)* | When set, require `Authorization: Bearer …` or `X-API-Token` for `/api/v1/*` (health/ready/version exempt; SSE may use `?token=`). Pair with `VITE_API_TOKEN` in `frontend/.env` |
+| `BSD_API_TOKEN` | *(empty)* | When set, require `Authorization: Bearer …`, `X-API-Token`, or the `bsd_session` cookie for `/api/v1/*` (health/ready/version exempt; older SSE clients may use `?token=`). The token does not lock players on the LAN; they have no auth. It locks a dashboard that is reachable from a network that cannot reach the players. `POST /api/v1/session` with the bearer token sets the cookie. Dev may still set `VITE_API_TOKEN` in `frontend/.env` |
 | `BSD_TRUSTED_PROXIES` | *(empty)* | Comma-separated peer IPs allowed to supply `X-Forwarded-For` for API rate-limit keys |
 | `BSD_STATIC_DIR` | *(empty)* | SPA dist directory for single-process serve (path relative to uvicorn cwd) |
 | `BSD_ENABLE_OPENAPI` | auto | OpenAPI/Swagger; auto-off when binding beyond localhost |
 
 `BSD_HOST` and `BSD_PORT` are read by the API and by `make run` (from the environment first, then the repo-root `.env`). `make run` also passes the port to Vite so the dev proxy follows it. When `BSD_HOST` is `0.0.0.0`, the health probe and the UI proxy still use `127.0.0.1`.
 
-Binding beyond loopback with an empty `BSD_API_TOKEN` logs an `insecure_bind` warning at startup — every control endpoint, including fleet reboot, is then open to the LAN.
+Binding beyond loopback with an empty `BSD_API_TOKEN` logs an `insecure_bind` warning at startup. On the player LAN that is the same exposure as the players themselves. The token matters when the dashboard is the only service a caller can reach.
 
 ## Scripts
 

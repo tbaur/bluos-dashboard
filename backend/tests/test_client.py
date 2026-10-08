@@ -443,6 +443,25 @@ async def test_get_uptime_uses_port_80_diagnostics(settings: Settings) -> None:
         await client.aclose()
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_diagnostics_logs_when_uptime_markup_changes(
+    settings: Settings,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    respx.get("http://192.168.1.20/diagnostics").mock(
+        return_value=httpx.Response(200, text="<html>no uptime here</html>")
+    )
+    client = BluOSClient(settings)
+    try:
+        with caplog.at_level("WARNING"):
+            parsed = await client.get_diagnostics("192.168.1.20")
+        assert "uptime" not in (parsed or {})
+        assert any("diagnostics_uptime_missing" in record.message for record in caplog.records)
+    finally:
+        await client.aclose()
+
+
 def test_parse_ci_s2_diagnostics_html() -> None:
     html = (Path(__file__).parent / "fixtures" / "ci_diagnostics.html").read_text()
     parsed = BluOSWebUIMixin._parse_diagnostics_html(html)

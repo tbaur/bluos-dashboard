@@ -1046,6 +1046,11 @@ button.volume-linked-pill-action:disabled {
   box-shadow: 0 0 0 4px rgba(62, 207, 142, 0.15);
 }
 
+.status-dot[data-stale="true"] {
+  background: var(--warn, #e2b340);
+  box-shadow: 0 0 0 4px rgba(226, 179, 64, 0.18);
+}
+
 .badge {
   font-size: 0.65rem;
   text-transform: uppercase;

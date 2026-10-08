@@ -7,6 +7,7 @@ import pytest
 import respx
 
 from app.bluos.client import BluOSClient
+from app.bluos.result import take_control_result
 from app.config import Settings
 from tests.fixtures.xml_samples import QUEUE, STATUS, SYNC_STATUS
 
@@ -90,6 +91,77 @@ async def test_post_transport_error(settings: Settings) -> None:
     client = BluOSClient(settings)
     try:
         assert await client.reboot("192.168.1.20") is False
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_artwork_stays_on_the_player_host(settings: Settings) -> None:
+    art = respx.get("http://192.168.1.20:11000/Artwork").mock(
+        return_value=httpx.Response(
+            200,
+            content=b"\xff\xd8\xff",
+            headers={"content-type": "image/jpeg"},
+        )
+    )
+    client = BluOSClient(settings)
+    try:
+        fetched = await client.fetch_artwork("192.168.1.20:11000", "/Artwork")
+        assert fetched is not None
+        assert fetched[1] == "image/jpeg"
+        assert art.called
+        assert (
+            await client.fetch_artwork("192.168.1.20:11000", "http://10.1.1.1:11000/art")
+            is None
+        )
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_play_rejects_bluos_error_document(settings: Settings) -> None:
+    respx.get("http://192.168.1.20:11000/Play").mock(
+        return_value=httpx.Response(
+            200,
+            content=b"<error>no slave available as new master</error>",
+        )
+    )
+    client = BluOSClient(settings)
+    try:
+        assert await client.play("192.168.1.20") is False
+        failure = take_control_result()
+        assert failure is not None
+        assert failure.kind == "bluos_error"
+        assert "no slave" in failure.detail
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_play_timeout_is_named(settings: Settings) -> None:
+    respx.get("http://192.168.1.20:11000/Play").mock(side_effect=httpx.ConnectTimeout("slow"))
+    client = BluOSClient(settings)
+    try:
+        assert await client.play("192.168.1.20") is False
+        failure = take_control_result()
+        assert failure is not None
+        assert failure.kind == "timeout"
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_volume_xml_still_succeeds(settings: Settings) -> None:
+    respx.get("http://192.168.1.20:11000/Volume").mock(
+        return_value=httpx.Response(200, content=b"<volume>20</volume>")
+    )
+    client = BluOSClient(settings)
+    try:
+        assert await client.set_volume("192.168.1.20", 20) is True
     finally:
         await client.aclose()
 

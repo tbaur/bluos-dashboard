@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock
 
 import httpx
@@ -186,6 +187,8 @@ async def test_sync_break_orphans_via_reparent(
         sync_role=SyncRole.STANDALONE,
     )
     _seed_devices(discovery, [orphan, donor])
+    discovery._grace_endpoints["gone"] = "172.16.10.174:11000"
+    discovery._grace_until["gone"] = time.time() + 60
     poller = StatusPoller(settings, discovery, client, events)
     poller.refresh_one = AsyncMock(return_value=None)  # type: ignore[method-assign]
     client.remove_sync_slave = AsyncMock(return_value=True)  # type: ignore[method-assign]
@@ -265,6 +268,8 @@ async def test_sync_break_donors_exclude_other_group_members(
         sync_role=SyncRole.STANDALONE,
     )
     _seed_devices(discovery, [orphan, other_primary, other_slave, free])
+    discovery._grace_endpoints["gone"] = "172.16.10.174:11000"
+    discovery._grace_until["gone"] = time.time() + 60
     poller = StatusPoller(settings, discovery, client, events)
     poller.refresh_one = AsyncMock(return_value=None)  # type: ignore[method-assign]
     client.remove_sync_slave = AsyncMock(return_value=True)  # type: ignore[method-assign]

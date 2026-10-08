@@ -5,11 +5,11 @@ import { StickyArt } from '@/components/StickyArt';
 describe('StickyArt', () => {
   it('keeps the last image when src goes empty', () => {
     const { rerender } = render(
-      <StickyArt src="http://art/a.jpg" empty={<span>empty</span>} />,
+      <StickyArt src="/api/v1/devices/a/art" empty={<span>empty</span>} />,
     );
-    expect(screen.getByRole('presentation')).toHaveAttribute('src', 'http://art/a.jpg');
+    expect(screen.getByRole('presentation')).toHaveAttribute('src', '/api/v1/devices/a/art');
     rerender(<StickyArt src="" empty={<span>empty</span>} />);
-    expect(screen.getByRole('presentation')).toHaveAttribute('src', 'http://art/a.jpg');
+    expect(screen.getByRole('presentation')).toHaveAttribute('src', '/api/v1/devices/a/art');
     expect(screen.queryByText('empty')).not.toBeInTheDocument();
   });
 });
