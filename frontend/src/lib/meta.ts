@@ -23,12 +23,3 @@ export function formatTrackArtist(track: string, artist: string): string {
   }
   return `${title}${TITLE_SEP}${name}`;
 }
-
-const ROOM_SEP = ' · ';
-
-/** One-line room list for tight chrome; extra names collapse to +N. */
-export function compactRoomLine(rooms: string[], keep = 2): string {
-  if (rooms.length === 0) return '';
-  if (rooms.length <= keep) return rooms.join(ROOM_SEP);
-  return `${rooms.slice(0, keep).join(ROOM_SEP)}${ROOM_SEP}+${rooms.length - keep}`;
-}

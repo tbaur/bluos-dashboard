@@ -9,16 +9,17 @@ import { usePlaybackPaint } from '@/hooks/usePlaybackPaint';
 import { useStableHouseStatus } from '@/hooks/useStableHouseStatus';
 import {
   fleetHasActivePlayback,
-  houseStatusLine,
   houseTransportTargets,
   type HouseStreamSource,
 } from '@/lib/fleetStatus';
+import { displaySyncRole } from '@/lib/syncGraph';
 import { formatClock } from '@/lib/clock';
 import { clampPlayback, playbackProgress } from '@/lib/playbackClock';
 import {
   ALSO_PLAYING_VISIBLE,
   alsoPlayingMeta,
   otherStreams,
+  rosterHeading,
   speakerRoster,
   streamPlaceLabel,
   type SpeakerRosterRow,
@@ -97,6 +98,22 @@ function nextRepeat(current: number): 0 | 1 | 2 {
   return 0;
 }
 
+/** Followers of the commanded player. Direct rooms are not told to pause or skip. */
+function syncedFollowerIds(
+  memberIds: readonly string[],
+  commandedIds: readonly string[],
+  devices: readonly PlayerStatus[],
+  sync: SyncState | null,
+): string[] {
+  const commanded = new Set(commandedIds);
+  const byId = new Map(devices.map((device) => [device.id, device]));
+  return memberIds.filter((id) => {
+    if (commanded.has(id)) return false;
+    const device = byId.get(id);
+    return Boolean(device && displaySyncRole(device, sync) === 'synced');
+  });
+}
+
 function holdCluster(memberIds: string[]) {
   const store = useFleetStore.getState();
   for (const id of memberIds) {
@@ -139,9 +156,11 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
   const location = useLocation();
   const [busy, setBusy] = useState<string | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const playButtonRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef(false);
 
   const status = useStableHouseStatus(devices, sync);
-  const statusTitle = houseStatusLine(status);
   const allMuted = devices.length > 0 && devices.every((d) => d.muted);
   const anyPlaying = fleetHasActivePlayback(devices);
   const mixed = status.sources.length > 1;
@@ -191,16 +210,14 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
   ) => {
     if (ids.length === 0) return;
     const members = focused?.memberIds ?? ids;
+    const followers = syncedFollowerIds(members, ids, devices, sync);
     if (key === 'skip' || key === 'back') {
       useFleetStore.getState().beginHouseCatchup(members);
     }
     run(key, async () => {
-      holdCluster(members);
+      holdCluster(followers);
       await Promise.all(ids.map((id) => control(id, () => fn(id), optimistic)));
-      paintCluster(
-        members.filter((id) => !ids.includes(id)),
-        optimistic,
-      );
+      paintCluster(followers, optimistic);
     });
   };
 
@@ -218,14 +235,12 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
       const focusedNow = focusedRef.current;
       const ids = focusedNow ? houseTransportTargets(focusedNow, store.devices) : [];
       const members = focusedNow?.memberIds ?? ids;
+      const followers = syncedFollowerIds(members, ids, store.devices, store.sync);
       const send = (fn: (id: string) => Promise<void>, optimistic?: Partial<PlayerStatus>) => {
         if (ids.length === 0) return;
-        holdCluster(members);
+        holdCluster(followers);
         void Promise.all(ids.map((id) => store.control(id, () => fn(id), optimistic))).then(() => {
-          paintCluster(
-            members.filter((id) => !ids.includes(id)),
-            optimistic,
-          );
+          paintCluster(followers, optimistic);
         });
       };
       if (event.key === ' ' || event.key === 'k') {
@@ -257,6 +272,19 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
     repeatMode === 1 ? 'Repeat all' : repeatMode === 2 ? 'Repeat one' : 'Repeat off';
 
   const showAlsoPlaying = showAlso(alsoVisible, alsoMeta);
+  const overflow = others.length - alsoVisible.length;
+
+  const chooseStream = (key: string) => {
+    returnFocusRef.current = true;
+    setMoreOpen(false);
+    setFocusKey(key);
+  };
+
+  useLayoutEffect(() => {
+    if (!returnFocusRef.current) return;
+    returnFocusRef.current = false;
+    playButtonRef.current?.focus();
+  }, [focused?.key]);
 
   return (
     <div
@@ -316,7 +344,7 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
               </ul>
             ) : null}
           </div>
-          <p className="house-remote-primary" title={statusTitle}>
+          <p className="house-remote-primary" title={focused?.primary ?? status.primary}>
             {titleHref ? (
               <Link to={titleHref} className="house-remote-status-link">
                 {focused?.primary ?? status.primary}
@@ -335,17 +363,7 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
       </div>
 
       <div className="house-remote-foot">
-        {showNowPlaying && place ? (
-          <div className="house-where">
-            <button type="button" className="house-where-chip">
-              {place}
-            </button>
-            <div className="house-roster-pop">
-              <p className="house-roster-kicker">In this group</p>
-              <SpeakerRoster rows={roster} />
-            </div>
-          </div>
-        ) : null}
+        {showNowPlaying && place ? <SpeakerChip place={place} rows={roster} /> : null}
         {showNowPlaying && totlen > 0 ? (
           <SeekBar
             key={lead?.id ?? 'house-seek'}
@@ -380,6 +398,7 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
                 <IconPrev />
               </button>
               <button
+                ref={playButtonRef}
                 type="button"
                 className="house-icon-btn house-icon-btn-play"
                 disabled={targets.length === 0}
@@ -469,7 +488,35 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
       {showAlsoPlaying ? (
         <section className="house-also" aria-label="Also playing">
           <div className="house-also-head">
-            <p className="house-also-count">{alsoMeta}</p>
+            <div className="house-also-count">
+              {overflow > 0 ? (
+                <>
+                  {`${ALSO_PLAYING_VISIBLE} other streams + `}
+                  <button
+                    type="button"
+                    className="house-also-more"
+                    aria-expanded={moreOpen}
+                    aria-label={`${overflow} more streams`}
+                    onClick={() => setMoreOpen((open) => !open)}
+                  >
+                    {overflow} more
+                  </button>
+                </>
+              ) : (
+                alsoMeta
+              )}
+            </div>
+            {moreOpen && overflow > 0 ? (
+              <ul className="house-also-more-list" aria-label="More streams">
+                {others.slice(ALSO_PLAYING_VISIBLE).map((source) => (
+                  <li key={source.key}>
+                    <button type="button" onClick={() => chooseStream(source.key)}>
+                      {source.primary}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
           <div className="house-also-list">
             {alsoVisible.map((source) => (
@@ -478,7 +525,7 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
                 source={source}
                 devices={devices}
                 sync={sync}
-                onFocus={() => setFocusKey(source.key)}
+                onFocus={() => chooseStream(source.key)}
               />
             ))}
           </div>
@@ -492,9 +539,53 @@ function showAlso(visible: { length: number }, meta: string): boolean {
   return visible.length > 0 && meta.length > 0;
 }
 
+function SpeakerChip({ place, rows }: { place: string; rows: SpeakerRosterRow[] }) {
+  const [pinned, setPinned] = useState(false);
+  const [hovering, setHovering] = useState(false);
+  const open = pinned || hovering;
+
+  useEffect(() => {
+    if (!pinned) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPinned(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pinned]);
+
+  return (
+    <div
+      className="house-where"
+      data-open={open ? 'true' : 'false'}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        if (!(next instanceof Node) || !event.currentTarget.contains(next)) setPinned(false);
+      }}
+    >
+      <button
+        type="button"
+        className="house-where-chip"
+        aria-expanded={open}
+        aria-controls="house-speaker-roster"
+        onClick={() => setPinned((value) => !value)}
+      >
+        {place}
+      </button>
+      {open ? (
+        <div className="house-roster-pop" id="house-speaker-roster">
+          <p className="house-roster-kicker">{rosterHeading(rows)}</p>
+          <SpeakerRoster rows={rows} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SpeakerRoster({ rows }: { rows: SpeakerRosterRow[] }) {
   return (
-    <ul className="house-roster">
+    <ul className="house-roster" aria-label="Speakers on this stream">
       {rows.map((row) => (
         <li key={row.id}>
           <span className="house-roster-name">{row.name}</span>
@@ -561,7 +652,7 @@ function AlsoStream({
             empty={<span className="house-also-pop-art house-also-thumb-empty" aria-hidden="true" />}
           />
           <div>
-            <p className="house-roster-kicker">{rows.length > 1 ? 'Group' : 'Player'}</p>
+            <p className="house-roster-kicker">{rosterHeading(rows)}</p>
             <p className="house-also-pop-title">{source.primary}</p>
             {album ? <p className="house-also-pop-sub">{album}</p> : null}
             {totlen > 0 ? (

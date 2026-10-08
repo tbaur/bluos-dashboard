@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compactRoomLine, META_SEP, formatTrackArtist, joinMeta } from '@/lib/meta';
+import { META_SEP, formatTrackArtist, joinMeta } from '@/lib/meta';
 
 describe('joinMeta', () => {
   it('joins with a slash that stays clear next to signed values', () => {
@@ -24,18 +24,3 @@ describe('formatTrackArtist', () => {
   });
 });
 
-describe('compactRoomLine', () => {
-  it('joins a short list and collapses extras', () => {
-    expect(compactRoomLine(['Kitchen', 'Living'])).toBe('Kitchen · Living');
-    expect(
-      compactRoomLine([
-        'Kitchen',
-        'Living',
-        'Hall',
-        'Office',
-        'Front',
-        'Primary',
-      ]),
-    ).toBe('Kitchen · Living · +4');
-  });
-});

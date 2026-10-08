@@ -144,11 +144,16 @@ describe('HouseRemote', () => {
     renderRemote();
     expect(screen.getByText('Sapana — Artist')).toBeInTheDocument();
     expect(screen.getByText('Night')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '2 speakers' })).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Speakers on this stream' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '2 speakers' }));
+    expect(screen.getByRole('list', { name: 'Speakers on this stream' })).toBeInTheDocument();
+    expect(screen.getByText('In this group')).toBeInTheDocument();
     expect(screen.getByText('Hallway')).toBeInTheDocument();
     expect(screen.getByText('Kitchen')).toBeInTheDocument();
     expect(screen.getByText('Lead')).toBeInTheDocument();
     expect(document.querySelector('.house-roster-role')).toHaveTextContent('Lead');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('list', { name: 'Speakers on this stream' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause house stream' }));
     await waitFor(() => expect(toggle).toHaveBeenCalledWith('1'));
@@ -159,6 +164,59 @@ describe('HouseRemote', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Shuffle off' }));
     await waitFor(() => expect(setShuffle).toHaveBeenCalledWith('1', 1));
+  });
+
+  it('pauses synced followers and leaves a direct player playing', async () => {
+    useFleetStore.setState({
+      devices: [
+        player({
+          id: '1',
+          name: 'Hallway',
+          state: 'play',
+          sync_role: 'primary',
+          track: 'Joni',
+          artist: 'Moomin',
+        }),
+        player({
+          id: '2',
+          name: 'Kitchen',
+          state: 'stream',
+          sync_role: 'synced',
+          master: '10.0.0.1:11000',
+          track: 'Joni',
+          artist: 'Moomin',
+        }),
+        player({
+          id: '3',
+          name: 'Patio',
+          state: 'play',
+          sync_role: 'standalone',
+          track: 'Joni',
+          artist: 'Moomin',
+        }),
+      ],
+      sync: {
+        groups: [
+          {
+            primary_id: '1',
+            primary_name: 'Hallway',
+            primary_ip: '10.0.0.1',
+            group: '',
+            slave_ids: ['2'],
+            slave_names: ['Kitchen'],
+          },
+        ],
+        standalone_ids: ['3'],
+      },
+    });
+    renderRemote();
+    fireEvent.click(screen.getByRole('button', { name: 'Pause house stream' }));
+    await waitFor(() => expect(toggle).toHaveBeenCalledWith('1'));
+    expect(toggle).toHaveBeenCalledTimes(1);
+    const states = Object.fromEntries(
+      useFleetStore.getState().devices.map((device) => [device.id, device.state]),
+    );
+    expect(states).toEqual({ '1': 'pause', '2': 'pause', '3': 'play' });
   });
 
   it('does not dim transport while skip is in flight', async () => {
@@ -197,7 +255,7 @@ describe('HouseRemote', () => {
     field.remove();
   });
 
-  it('does not flash source tabs when skip splits a merged house stream', async () => {
+  it('keeps the hero on the new title when skip splits a merged house stream', async () => {
     useFleetStore.setState({
       devices: [
         player({
@@ -254,6 +312,8 @@ describe('HouseRemote', () => {
       });
     });
 
+    const speakers = screen.queryByRole('button', { name: '2 speakers' });
+    if (speakers) fireEvent.click(speakers);
     expect(screen.getByText('Hallway')).toBeInTheDocument();
     expect(screen.getByText('Kitchen')).toBeInTheDocument();
     expect(screen.queryByRole('tablist', { name: 'House sources' })).not.toBeInTheDocument();
@@ -342,12 +402,41 @@ describe('HouseRemote', () => {
       },
     });
     renderRemote();
-    expect(screen.getByRole('button', { name: '7 speakers' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Also playing' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '7 speakers' }));
+    expect(screen.getByText('On this stream')).toBeInTheDocument();
+    expect(screen.queryByText('In this group')).not.toBeInTheDocument();
     expect(screen.getAllByText('Direct')).toHaveLength(5);
   });
 
-  it('shows three other streams and leaves the rest as text', () => {
+  it('does not call players on the same audio a group', () => {
+    useFleetStore.setState({
+      devices: [
+        player({
+          id: '1',
+          name: 'Hallway',
+          state: 'play',
+          track: 'Joni',
+          artist: 'Moomin',
+        }),
+        player({
+          id: '2',
+          name: 'Kitchen',
+          state: 'play',
+          track: 'Joni',
+          artist: 'Moomin',
+        }),
+      ],
+      sync: { groups: [], standalone_ids: ['1', '2'] },
+    });
+    renderRemote();
+    fireEvent.click(screen.getByRole('button', { name: '2 speakers' }));
+    expect(screen.getByText('On this stream')).toBeInTheDocument();
+    expect(screen.getAllByText('Direct')).toHaveLength(2);
+    expect(screen.queryByText('In this group')).not.toBeInTheDocument();
+  });
+
+  it('shows three other streams and can focus the rest', () => {
     const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
     useFleetStore.setState({
       devices: names.map((name, index) =>
@@ -364,9 +453,15 @@ describe('HouseRemote', () => {
     });
     renderRemote();
     expect(screen.getByRole('region', { name: 'Also playing' })).toBeInTheDocument();
-    expect(screen.getByText('3 other streams + 2 more')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Artist/ })).toHaveLength(3);
-    expect(screen.queryByRole('link', { name: /3 streams/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /more/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '2 more streams' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Echo — Artist' }));
+    expect(screen.getByRole('button', { name: 'Pause house stream' })).toHaveFocus();
+    expect(screen.getByText('Echo — Artist')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '2 more streams' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Foxtrot — Artist' }));
+    expect(screen.getByText('Foxtrot — Artist')).toBeInTheDocument();
   });
 
   it('moves the other-stream hover with playback', () => {

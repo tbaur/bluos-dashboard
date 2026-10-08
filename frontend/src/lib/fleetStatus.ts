@@ -266,7 +266,7 @@ export type FleetHouseStatus = {
   isIdle: boolean;
   /** Nothing playing, but a paused stream still has metadata. */
   isPaused: boolean;
-  /** One clear house stream — safe to show album art / focus a lead. */
+  /** True when every playing room is on one stream. Art does not depend on this. */
   hasDominantStream: boolean;
   image: string;
   leadId: string | null;

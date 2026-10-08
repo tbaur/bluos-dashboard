@@ -41,6 +41,25 @@ describe('SeekBar', () => {
     expect(screen.getByText('2:00')).toBeInTheDocument();
   });
 
+  it('keeps a drag when a nearby status sample arrives', () => {
+    const { container, rerender } = render(
+      <SeekBar initialSecs={30} totlen={240} playing={false} canSeek onSeek={vi.fn()} />,
+    );
+    const slider = screen.getByRole('slider', { name: 'Seek' });
+    fireEvent.pointerDown(slider);
+    fireEvent.change(slider, { target: { value: '80' } });
+    rerender(<SeekBar initialSecs={31} totlen={240} playing={false} canSeek onSeek={vi.fn()} />);
+    expect(container.querySelector('.dossier-progress-fill')).toHaveStyle({
+      transform: `scaleX(${80 / 240})`,
+    });
+    expect(slider).toHaveAttribute('aria-valuetext', '1:20 of 4:00');
+    fireEvent.pointerUp(slider);
+    expect(container.querySelector('.dossier-progress-fill')).toHaveStyle({
+      transform: `scaleX(${80 / 240})`,
+    });
+    expect(slider).toHaveAttribute('aria-valuetext', '1:20 of 4:00');
+  });
+
   it('commits seek on change', () => {
     vi.useFakeTimers();
     try {

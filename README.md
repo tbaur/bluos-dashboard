@@ -9,11 +9,11 @@ LAN dashboard for every BluOS player on your network — Nodes, Pulse, NAD CI zo
 
 Related CLI: [bluos-controller](https://github.com/tbaur/bluos-controller). This dashboard is self-contained (no runtime dependency on the CLI).
 
-![House remote with now playing, room chips, and playback controls](docs/images/now-playing.png)
+![House remote on one stream, with the speaker count and playback controls](docs/images/now-playing.png)
 
 ## Features
 
-- **House remote** — artwork, title/album/source, rooms on the stream, live seek, skip, shuffle/repeat, mute, and stop all. Space or K play/pause, arrows or J/L skip, M mute. Skip keeps now-playing painted (no empty flash). When nothing is playing, Mute and Stop all stay on the bottom row (All quiet does not collapse the card). When rooms are on different sources, pick which stream the remote drives.
+- **House remote** — artwork, title/album/source, live seek, skip, shuffle/repeat, mute, and stop all. The remote stays on one stream. A count opens the speaker roster (lead, synced, or playing on their own, with volume and mute). Other streams sit under Also playing, and choosing one focuses it. Anything past the three tiles opens from the count. Space or K play/pause, arrows or J/L skip, M mute. Skip keeps now-playing painted (no empty flash). When nothing is playing, Mute and Stop all stay on the bottom row (All quiet does not collapse the card).
 - **Fleet** — every player, live now-playing, A–Z or clustered by sync group (auto-switches to Sync when a group forms).
 - **Volume** — **Bluesound** (bluesound.com Nodes/Pulse) and **NAD CI S2** are separate sliders (different amp scales). Bluesound has 20 / 48 / 60 chips; CI S2 has 42 / 50 / 60 / 70. Other brands (NAD C658, …) use the player row only.
 - **Multi-room** — create groups, add/remove followers, group all free rooms under a lead, ungroup one set or all. Break-all also clears orphans whose primary left the network.

@@ -4,6 +4,7 @@ import type { HouseStreamSource } from '@/lib/fleetStatus';
 import {
   alsoPlayingMeta,
   otherStreams,
+  rosterHeading,
   speakerRoleLabel,
   speakerRoster,
   streamPlaceLabel,
@@ -73,6 +74,14 @@ describe('speakerRoleLabel', () => {
     expect(speakerRoleLabel('primary', 7)).toBe('Lead');
     expect(speakerRoleLabel('synced', 7)).toBe('Synced');
     expect(speakerRoleLabel('standalone', 7)).toBe('Direct');
+  });
+});
+
+describe('rosterHeading', () => {
+  it('names a player, a BluOS group, and a shared stream', () => {
+    expect(rosterHeading([{ role: 'standalone' }])).toBe('Player');
+    expect(rosterHeading([{ role: 'primary' }, { role: 'synced' }])).toBe('In this group');
+    expect(rosterHeading([{ role: 'primary' }, { role: 'standalone' }])).toBe('On this stream');
   });
 });
 

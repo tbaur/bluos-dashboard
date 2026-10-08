@@ -2,7 +2,7 @@ import type { PlayerStatus, SyncRole, SyncState } from '@/api/types';
 import type { HouseStreamSource } from '@/lib/fleetStatus';
 import { displaySyncRole } from '@/lib/syncGraph';
 
-/** Also playing stays one row. Anything past this is a text count. */
+/** Also playing stays one row of tiles. The rest open from the count. */
 export const ALSO_PLAYING_VISIBLE = 3;
 
 const ROLE_RANK: Record<SyncRole, number> = {
@@ -14,10 +14,18 @@ const ROLE_RANK: Record<SyncRole, number> = {
 export type SpeakerRosterRow = {
   id: string;
   name: string;
+  role: SyncRole;
   roleLabel: string;
   volume: number;
   muted: boolean;
 };
+
+/** One player, a BluOS group, or several players on the same audio. */
+export function rosterHeading(rows: readonly Pick<SpeakerRosterRow, 'role'>[]): string {
+  if (rows.length <= 1) return 'Player';
+  if (rows.every((row) => row.role !== 'standalone')) return 'In this group';
+  return 'On this stream';
+}
 
 /**
  * Lead and synced are the BluOS group. Standalone members on the same
@@ -53,6 +61,7 @@ export function speakerRoster(
     .map((device) => ({
       id: device.id,
       name: device.name,
+      role: roleOf(device),
       roleLabel: speakerRoleLabel(roleOf(device), memberCount),
       volume: device.volume,
       muted: device.muted,

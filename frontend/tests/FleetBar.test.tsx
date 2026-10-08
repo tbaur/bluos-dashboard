@@ -184,7 +184,7 @@ describe('FleetBar house remote art', () => {
     expect(art).toHaveAttribute('href', '/player/1');
   });
 
-  it('hides a single house stream when multiple sources are playing, and lets you pick one', () => {
+  it('keeps the focused stream visible and switches it from Also playing', () => {
     useFleetStore.setState({
       devices: [
         player({
@@ -210,6 +210,7 @@ describe('FleetBar house remote art', () => {
     renderBar();
     expect(screen.getByRole('region', { name: 'Also playing' })).toBeInTheDocument();
     expect(screen.getByText('1 other stream')).toBeInTheDocument();
+    expect(screen.getByText('Quiet — B').closest('p')).toHaveAttribute('title', 'Quiet — B');
     const quietArt = screen.getByRole('link', { name: /Now playing artwork — open Quiet/ });
     expect(quietArt.querySelector('img')).toHaveAttribute(
       'src',

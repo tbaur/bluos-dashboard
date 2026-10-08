@@ -31,6 +31,7 @@ export function usePlaybackPaint(
   });
 
   useLayoutEffect(() => {
+    if (holdRef?.current) return;
     const now = performance.now();
     const predicted = playbackPosition(
       originRef.current.secs,
