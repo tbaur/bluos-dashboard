@@ -17,6 +17,7 @@ from app.api.common import (
     schedule_refresh,
 )
 from app.api.errors import AppError
+from app.bluos.result import take_control_result
 from app.models import (
     FirmwareEntry,
     FleetActionResponse,
@@ -75,9 +76,18 @@ async def set_fleet_volume(body: VolumeRequest, state: StateDep) -> FleetVolumeR
         if ok:
             schedule_refresh(state, device_id)
         else:
+            failure = take_control_result()
+            kind = failure.kind if failure else "failed"
+            state.poller.last_control_failure_kind = kind
             logger.warning(
                 "control_failed",
-                extra={"op": "fleet_volume", "device_id": device_id, "device_ip": endpoint},
+                extra={
+                    "op": "fleet_volume",
+                    "device_id": device_id,
+                    "device_ip": endpoint,
+                    "failure_kind": kind,
+                    "failure_detail": failure.detail if failure else "",
+                },
             )
         return FleetVolumeResult(device_id=device_id, name=name, ok=ok)
 

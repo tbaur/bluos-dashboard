@@ -102,7 +102,7 @@ export function FleetPage() {
             </div>
           </div>
           {sorted.map((device) => (
-            <PlayerRow key={device.id} device={device} />
+            <PlayerRow key={device.id} deviceId={device.id} />
           ))}
         </div>
       )}

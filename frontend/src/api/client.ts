@@ -66,6 +66,7 @@ async function request<T>(
     headers.set('Content-Type', 'application/json');
     body = JSON.stringify(init.json);
   }
+  headers.set('X-BSD-Request', '1');
   if (apiToken) {
     headers.set('Authorization', `Bearer ${apiToken}`);
   }
@@ -82,6 +83,7 @@ async function request<T>(
       ...rest,
       headers,
       body,
+      credentials: 'include',
       signal,
     });
     if (!response.ok) {
@@ -129,10 +131,10 @@ export const api = {
     request<DiagnoseResponse>(`/devices/${id}/diagnose`, { cache: 'no-store', ...init }),
   getSettings: (id: string, pageId: 'audio' | 'player', init?: RequestInit) =>
     request<DeviceSettingsResponse>(`/devices/${id}/settings/${pageId}`, init),
-  setSetting: (id: string, settingId: string, value: string, controlPath = '') =>
+  setSetting: (id: string, settingId: string, value: string) =>
     request<void>(`/devices/${id}/settings`, {
       method: 'POST',
-      json: { id: settingId, value, control_path: controlPath },
+      json: { id: settingId, value },
     }),
   getUpgrade: (id: string, init?: RequestInit) =>
     request<UpgradeStatus>(`/devices/${id}/upgrade`, init),

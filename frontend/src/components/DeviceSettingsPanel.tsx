@@ -73,7 +73,7 @@ export function DeviceSettingsPanel({ deviceId }: DeviceSettingsPanelProps) {
     setBusyId(setting.id);
     setError(null);
     try {
-      await api.setSetting(deviceId, setting.id, value, setting.control_path);
+      await api.setSetting(deviceId, setting.id, value);
       setValues((prev) => ({ ...prev, [setting.id]: value }));
       setDrafts((prev) => {
         const next = { ...prev };

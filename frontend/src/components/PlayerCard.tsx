@@ -11,7 +11,7 @@ import {
 import { joinMeta } from '@/lib/meta';
 import { displaySyncRole } from '@/lib/syncGraph';
 import { useFleetStore } from '@/store/fleetStore';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 
 function isPlaying(state: string): boolean {
   return state === 'play' || state === 'stream';
@@ -43,41 +43,42 @@ function primaryNameFor(device: PlayerStatus, devices: PlayerStatus[]): string |
   return primary?.name ?? device.master;
 }
 
+function volumesAreLinked(devices: PlayerStatus[], deviceId: string): boolean {
+  const me = devices.find((d) => d.id === deviceId);
+  if (!me) return false;
+  const group = volumePeerGroup(me);
+  if (group === 'independent') return false;
+  const peers = devices.filter((d) => volumePeerGroup(d) === group);
+  return peers.length > 1 && peers.every((d) => d.volume === peers[0].volume);
+}
+
+function followedName(devices: PlayerStatus[], deviceId: string, sync: ReturnType<typeof useFleetStore.getState>['sync']): string | null {
+  const me = devices.find((d) => d.id === deviceId);
+  if (!me) return null;
+  const role = displaySyncRole(me, sync);
+  if (role !== 'synced') return null;
+  return primaryNameFor({ ...me, sync_role: role }, devices);
+}
+
 /** Compact fixed-column fleet row — keeps controls aligned across players. */
-export function PlayerRow({ device }: { device: PlayerStatus }) {
-  const devices = useFleetStore((s) => s.devices);
+export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: string }) {
+  const device = useFleetStore((s) => s.devices.find((d) => d.id === deviceId));
   const sync = useFleetStore((s) => s.sync);
+  const volumesLinked = useFleetStore((s) => volumesAreLinked(s.devices, deviceId));
+  const follows = useFleetStore((s) => followedName(s.devices, deviceId, s.sync));
   const control = useFleetStore((s) => s.control);
   const toggleMute = useFleetStore((s) => s.toggleMute);
   const holdVolume = useFleetStore((s) => s.holdVolume);
   const commitTimer = useRef<number | undefined>(undefined);
-  const latestLevel = useRef(device.volume);
+  const latestLevel = useRef(device?.volume ?? 0);
   const [dragging, setDragging] = useState(false);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
-  const displayVolume = dragVolume ?? device.volume;
-
-  const peerGroup = volumePeerGroup(device);
-  const volumePeers = useMemo(() => {
-    if (peerGroup === 'independent') return [device];
-    return devices.filter((d) => volumePeerGroup(d) === peerGroup);
-  }, [device, devices, peerGroup]);
-  const volumesLinked =
-    volumePeers.length > 1 && volumePeers.every((d) => d.volume === volumePeers[0].volume);
-  const role = displaySyncRole(device, sync);
-  const follows = useMemo(() => primaryNameFor({ ...device, sync_role: role }, devices), [
-    device,
-    devices,
-    role,
-  ]);
-  const synced = role === 'synced';
-  const playing = isPlaying(device.state);
-  const np = nowPlaying(device);
 
   useEffect(() => {
-    if (!dragging) {
+    if (!dragging && device) {
       latestLevel.current = device.volume;
     }
-  }, [device.volume, dragging]);
+  }, [device, dragging]);
 
   // Unmounting mid-drag (sort change, rescan) must not fire a late volume write.
   useEffect(
@@ -86,6 +87,13 @@ export function PlayerRow({ device }: { device: PlayerStatus }) {
     },
     [],
   );
+
+  if (!device) return null;
+  const displayVolume = dragVolume ?? device.volume;
+  const role = displaySyncRole(device, sync);
+  const synced = role === 'synced';
+  const playing = isPlaying(device.state);
+  const np = nowPlaying(device);
 
   const flushVolume = (level: number) => {
     latestLevel.current = level;
@@ -138,7 +146,8 @@ export function PlayerRow({ device }: { device: PlayerStatus }) {
           <span
             className="status-dot"
             data-online={device.status === 'online'}
-            aria-label={device.status}
+            data-stale={device.stale ? 'true' : 'false'}
+            aria-label={device.stale ? 'stale' : device.status}
           />
           <Link className="fleet-player-name" to={`/player/${device.id}`}>
             {device.name}
@@ -257,7 +266,7 @@ export function PlayerRow({ device }: { device: PlayerStatus }) {
           <span
             className="volume-linked"
             title={
-              peerGroup === 'ci-s2'
+              volumePeerGroup(device) === 'ci-s2'
                 ? 'NAD CI S2 players share this volume'
                 : 'Bluesound players share this volume'
             }
@@ -268,7 +277,7 @@ export function PlayerRow({ device }: { device: PlayerStatus }) {
       </div>
     </div>
   );
-}
+});
 
 /** @deprecated Prefer PlayerRow — alias for older imports */
 export const PlayerCard = PlayerRow;

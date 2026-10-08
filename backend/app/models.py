@@ -29,6 +29,8 @@ class PlayerStatus(BaseModel):
     device_class: str = ""
     mac: str = ""
     status: str = "offline"
+    # Last snapshot is still on screen, but the latest long-poll missed.
+    stale: bool = False
     state: str = "stop"
     service: str = ""
     service_id: str = ""

@@ -18,6 +18,8 @@ const MUTE_HOLD_MS = 4500;
 const HOUSE_CATCHUP_MS = 10_000;
 
 let houseCatchupTimer: number | undefined;
+/** Latest control per device. An older failure must not roll back a newer command. */
+const controlEpoch = new Map<string, number>();
 
 interface FleetState {
   devices: PlayerStatus[];
@@ -133,6 +135,10 @@ function applyPlaybackHold(incoming: PlayerStatus, previous: PlayerStatus): Play
   const keepMeta = !hasTrackMeta(incoming) && hasTrackMeta(previous);
   const keepSecs = keepMeta || (hasTrackMeta(incoming) && isSameTrack(incoming, previous));
   const meta = keepMeta ? previous : incoming;
+  // A skip often arrives with an empty image for a moment. Keep the last cover
+  // then. A new track that already has its own image must replace it, or the
+  // hold eats the only event and the old cover stays up.
+  const image = incoming.image || previous.image;
   return {
     ...incoming,
     state: previous.state,
@@ -142,7 +148,7 @@ function applyPlaybackHold(incoming: PlayerStatus, previous: PlayerStatus): Play
     track: meta.track,
     artist: meta.artist,
     album: meta.album,
-    image: previous.image || incoming.image,
+    image,
     totlen: keepMeta || incoming.totlen <= 0 ? previous.totlen : incoming.totlen,
     quality: meta.quality,
     stream_format: meta.stream_format,
@@ -787,6 +793,8 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   },
 
   control: async (deviceId, action, optimistic) => {
+    const epoch = (controlEpoch.get(deviceId) ?? 0) + 1;
+    controlEpoch.set(deviceId, epoch);
     const previous = get().devices.find((d) => d.id === deviceId);
     const volumeOnly = isVolumeOnlyPatch(optimistic);
     const mutePatch = isMutePatch(optimistic);
@@ -815,7 +823,8 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         get().holdVolume(deviceId);
       }
     } catch (err) {
-      if (previous) {
+      // A newer nudge or skip owns the row. Reverting this attempt would undo it.
+      if (previous && controlEpoch.get(deviceId) === epoch) {
         get().patchDevice(deviceId, previous);
       }
       const message =

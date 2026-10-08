@@ -168,7 +168,6 @@ describe('DeviceSettingsPanel', () => {
         'player-kitchen',
         'eq-switch',
         'ON',
-        '/alsa_setting',
       );
     });
     await screen.findByText('Treble');
@@ -184,7 +183,6 @@ describe('DeviceSettingsPanel', () => {
         'player-kitchen',
         'channelMode',
         'left',
-        '/audiomodes',
       );
     });
   });
@@ -200,7 +198,6 @@ describe('DeviceSettingsPanel', () => {
         'player-kitchen',
         'eq-switch',
         'ON',
-        '/alsa_setting',
       );
     });
   });
@@ -240,7 +237,6 @@ describe('DeviceSettingsPanel', () => {
         'player-kitchen',
         'eq-treble',
         '2',
-        '/alsa_setting',
       );
     });
   });
@@ -261,7 +257,6 @@ describe('DeviceSettingsPanel', () => {
         'player-kitchen',
         'volumeLimits',
         '-80,-5',
-        '',
       );
     });
   });
@@ -283,7 +278,6 @@ describe('DeviceSettingsPanel', () => {
         'player-kitchen',
         'nodename',
         'Kitchen Speakers',
-        '/Name',
       );
     });
   });
@@ -299,7 +293,6 @@ describe('DeviceSettingsPanel', () => {
         'player-kitchen',
         'reset',
         '1',
-        '/alsa_setting',
       );
     });
     expect(confirm).toHaveBeenCalled();

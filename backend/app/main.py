@@ -208,6 +208,7 @@ async def lifespan(app: FastAPI):
         events=events,
         poller=poller,
     )
+    discovery.mdns.start()
     poller.start()
     try:
         await discovery.refresh()
@@ -219,6 +220,7 @@ async def lifespan(app: FastAPI):
     finally:
         await poller.stop()
         await drain_pending_refreshes()
+        discovery.mdns.stop()
         await client.aclose()
         logger.info("app_stopped")
 

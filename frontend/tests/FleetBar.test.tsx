@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FleetBar } from '@/components/GlobalVolumeControl';
+import { playerArtSrc } from '@/lib/artwork';
 import type { PlayerStatus, SyncState } from '@/api/types';
 import { LIVE_HOUSE_SESSION } from '@/lib/houseSession';
 import { useFleetStore } from '@/store/fleetStore';
@@ -116,7 +117,10 @@ describe('FleetBar house remote art', () => {
       name: /Now playing artwork — open Track/,
     });
     expect(art).toHaveAttribute('href', '/player/1');
-    expect(art.querySelector('img')).toHaveAttribute('src', 'http://10.0.0.1/cover.jpg');
+    expect(art.querySelector('img')).toHaveAttribute(
+      'src',
+      playerArtSrc('1', 'http://10.0.0.1/cover.jpg'),
+    );
     expect(screen.getByText('Track — Artist')).toBeInTheDocument();
     expect(screen.getByText('AirPlay')).toBeInTheDocument();
     expect(screen.queryByText(/Open house/)).not.toBeInTheDocument();
@@ -207,11 +211,17 @@ describe('FleetBar house remote art', () => {
     expect(screen.getByRole('tablist', { name: 'House sources' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Quiet/ })).toHaveAttribute('aria-selected', 'true');
     const quietArt = screen.getByRole('link', { name: /Now playing artwork — open Quiet/ });
-    expect(quietArt.querySelector('img')).toHaveAttribute('src', 'http://art/quiet.jpg');
+    expect(quietArt.querySelector('img')).toHaveAttribute(
+      'src',
+      playerArtSrc('2', 'http://art/quiet.jpg'),
+    );
     fireEvent.click(screen.getByRole('tab', { name: /Party/ }));
     expect(screen.getByRole('tab', { name: /Party/ })).toHaveAttribute('aria-selected', 'true');
     const partyArt = screen.getByRole('link', { name: /Now playing artwork — open Party/ });
-    expect(partyArt.querySelector('img')).toHaveAttribute('src', 'http://art/party.jpg');
+    expect(partyArt.querySelector('img')).toHaveAttribute(
+      'src',
+      playerArtSrc('1', 'http://art/party.jpg'),
+    );
   });
 
   it('puts the house remote left of volume', () => {

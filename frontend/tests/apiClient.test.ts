@@ -116,7 +116,7 @@ describe('api client', () => {
     });
   });
 
-  it('posts settings writes with control_path', async () => {
+  it('posts settings writes without a client-supplied path', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 204,
@@ -125,7 +125,7 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(
-      api.setSetting('player-kitchen', 'channelMode', 'left', '/audiomodes'),
+      api.setSetting('player-kitchen', 'channelMode', 'left'),
     ).resolves.toBeUndefined();
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -135,7 +135,6 @@ describe('api client', () => {
         body: JSON.stringify({
           id: 'channelMode',
           value: 'left',
-          control_path: '/audiomodes',
         }),
       }),
     );

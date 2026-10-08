@@ -12,32 +12,29 @@ vi.mock('@/api/client', () => ({
   },
 }));
 
-type HandlerMap = {
-  onopen: ((ev?: Event) => void) | null;
-  onmessage: ((ev: MessageEvent) => void) | null;
-  onerror: ((ev?: Event) => void) | null;
-};
-
-class MockEventSource {
-  static instances: MockEventSource[] = [];
-  onopen: HandlerMap['onopen'] = null;
-  onmessage: HandlerMap['onmessage'] = null;
-  onerror: HandlerMap['onerror'] = null;
-  closed = false;
-
-  constructor(public url: string) {
-    MockEventSource.instances.push(this);
-  }
-
-  close() {
-    this.closed = true;
-  }
+function streamOf(chunks: string[], hold: Promise<void>) {
+  const encoder = new TextEncoder();
+  const pending = chunks.map((chunk) => encoder.encode(chunk));
+  let index = 0;
+  return {
+    getReader() {
+      return {
+        async read() {
+          if (index < pending.length) {
+            const value = pending[index];
+            index += 1;
+            return { done: false, value };
+          }
+          await hold;
+          return { done: true, value: undefined };
+        },
+      };
+    },
+  };
 }
 
 describe('useLiveFleet', () => {
   beforeEach(() => {
-    MockEventSource.instances = [];
-    vi.stubGlobal('EventSource', MockEventSource);
     load.mockReset();
     getSync.mockReset();
     load.mockResolvedValue(undefined);
@@ -50,110 +47,51 @@ describe('useLiveFleet', () => {
       setSync: vi.fn(),
       connection: 'connecting',
     });
-    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
-  it('opens a single EventSource and marks connection live', async () => {
-    const setConnection = vi.fn();
-    useFleetStore.setState({ setConnection });
-
-    const { unmount } = renderHook(() => useLiveFleet());
-    expect(MockEventSource.instances).toHaveLength(1);
-    expect(MockEventSource.instances[0]?.url).toBe('/api/v1/events');
-
-    await act(async () => {
-      MockEventSource.instances[0]?.onopen?.(new Event('open'));
-    });
-    expect(setConnection).toHaveBeenCalledWith('live');
-
-    unmount();
-    expect(MockEventSource.instances[0]?.closed).toBe(true);
-  });
-
-  it('applies fleet SSE payloads to the store', async () => {
+  it('opens the event stream without a token query and applies a fleet payload', async () => {
     const setFleet = vi.fn();
     const setSync = vi.fn();
-    useFleetStore.setState({ setFleet, setSync });
+    const setConnection = vi.fn();
+    useFleetStore.setState({ setFleet, setSync, setConnection });
+    let release: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: streamOf(
+        [
+          'data: {"type":"fleet","data":{"devices":[{"id":"a"}],"discovered_at":123,"sync":{"groups":[],"standalone_ids":["a"]}}}\n\n',
+        ],
+        hold,
+      ),
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
-    renderHook(() => useLiveFleet());
-    const source = MockEventSource.instances[0];
-    expect(source).toBeTruthy();
-
+    const { unmount } = renderHook(() => useLiveFleet());
     await act(async () => {
-      source?.onmessage?.(
-        new MessageEvent('message', {
-          data: JSON.stringify({
-            type: 'fleet',
-            data: {
-              devices: [{ id: 'a', name: 'A' }],
-              discovered_at: 123,
-              sync: { groups: [], standalone_ids: ['a'] },
-            },
-          }),
-        }),
-      );
+      await Promise.resolve();
     });
 
-    expect(setFleet).toHaveBeenCalledWith([{ id: 'a', name: 'A' }], 123);
+    expect(fetchMock).toHaveBeenCalled();
+    const url = String(fetchMock.mock.calls[0]?.[0]);
+    expect(url).toBe('/api/v1/events');
+    expect(url).not.toContain('token=');
+    expect(setFleet).toHaveBeenCalledWith([{ id: 'a' }], 123);
     expect(setSync).toHaveBeenCalledWith({ groups: [], standalone_ids: ['a'] });
-  });
-
-  it('starts REST fallback while reconnecting and clears it when live', async () => {
-    const setConnection = vi.fn();
-    useFleetStore.setState({ setConnection });
-
-    renderHook(() => useLiveFleet());
-    const source = MockEventSource.instances[0];
-
-    await act(async () => {
-      source?.onerror?.(new Event('error'));
-    });
-    expect(setConnection).toHaveBeenCalledWith('reconnecting');
-
-    await act(async () => {
-      vi.advanceTimersByTime(5000);
-    });
-    expect(load.mock.calls.length).toBeGreaterThanOrEqual(2);
-
-    const reopened = MockEventSource.instances[1];
-    await act(async () => {
-      reopened?.onopen?.(new Event('open'));
-    });
     expect(setConnection).toHaveBeenCalledWith('live');
-  });
 
-  it('marks offline after max reconnect attempts then retries SSE', async () => {
-    const setConnection = vi.fn();
-    useFleetStore.setState({ setConnection });
-
-    renderHook(() => useLiveFleet());
-
-    for (let i = 0; i < 8; i += 1) {
-      const source = MockEventSource.instances[i];
-      await act(async () => {
-        source?.onerror?.(new Event('error'));
-      });
-      if (i < 7) {
-        await act(async () => {
-          vi.advanceTimersByTime(60_000);
-        });
-      }
-    }
-    expect(setConnection).toHaveBeenCalledWith('offline');
-
+    setConnection.mockClear();
+    unmount();
+    release();
     await act(async () => {
-      vi.advanceTimersByTime(60_000);
+      await Promise.resolve();
     });
-    const resumed = MockEventSource.instances[8];
-    expect(resumed).toBeTruthy();
-    await act(async () => {
-      resumed?.onopen?.(new Event('open'));
-    });
-    expect(setConnection).toHaveBeenCalledWith('live');
+    expect(setConnection).not.toHaveBeenCalled();
   });
 });

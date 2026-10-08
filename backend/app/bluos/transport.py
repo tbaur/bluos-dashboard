@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from app.bluos.rate_limit import RateLimiter
+from app.bluos.result import CallResult, classify_control_body, note_control_result
 from app.config import Settings
 from app.validators import format_endpoint, parse_endpoint, sanitize_ip
 
@@ -150,6 +151,75 @@ class BluOSTransport:
         logger.warning("redirect_limit_exceeded", extra={"device_ip": origin_ip, "url": url})
         return None
 
+    async def _transport_get(
+        self,
+        target: str,
+        path: str,
+        *,
+        query: str = "",
+        retries: int = 3,
+        control: bool = False,
+        timeout: float | httpx.Timeout | None = None,
+        hold_slot: bool = True,
+    ) -> CallResult:
+        resolved = self._resolve_target(target)
+        if not resolved:
+            return CallResult.failure("rejected", "invalid target")
+        sanitized, port = resolved
+        endpoint_key = format_endpoint(sanitized, port)
+        if not self.settings.is_allowed_device_ip(sanitized):
+            logger.warning("blocked_non_private_ip", extra={"device_ip": sanitized})
+            return CallResult.failure("rejected", "ip not allowed")
+        if control:
+            await self._rate.wait(endpoint_key)
+        url = self._url(sanitized, path, query, port=port)
+        last_error: Exception | None = None
+        attempts = 1 if control else retries
+        for attempt in range(attempts):
+            try:
+                async with self._call_slot(hold_slot):
+                    response = await self._follow_get(sanitized, url, timeout=timeout)
+                if response is None:
+                    return CallResult.failure("rejected", "redirect blocked")
+                if response.status_code >= 400:
+                    logger.debug(
+                        "bluos_http_error endpoint=%s path=%s status=%s",
+                        endpoint_key,
+                        path,
+                        response.status_code,
+                    )
+                    return CallResult.failure("http_status", str(response.status_code))
+                content = response.content
+                if len(content) > self.settings.max_xml_size:
+                    logger.warning(
+                        "payload_too_large endpoint=%s path=%s",
+                        endpoint_key,
+                        path,
+                    )
+                    return CallResult.failure("rejected", "payload too large")
+                return CallResult.success(content)
+            except httpx.TimeoutException as exc:
+                last_error = exc
+                if attempt + 1 >= attempts:
+                    return CallResult.failure("timeout", type(exc).__name__)
+            except (httpx.TransportError, OSError) as exc:
+                last_error = exc
+                if attempt + 1 >= attempts:
+                    break
+                # Jitter the backoff: a LAN blip fails every device at once, and
+                # a fixed delay would march them all back in lockstep.
+                base = min(10.0, (2**attempt) + 0.1)
+                await asyncio.sleep(base * (0.5 + random.random() / 2))
+        detail = type(last_error).__name__ if last_error else "transport"
+        if last_error:
+            logger.debug(
+                "bluos_request_failed endpoint=%s path=%s err=%s",
+                endpoint_key,
+                path,
+                last_error,
+            )
+        return CallResult.failure("transport", detail)
+
     async def _get(
         self,
         target: str,
@@ -161,57 +231,45 @@ class BluOSTransport:
         timeout: float | httpx.Timeout | None = None,
         hold_slot: bool = True,
     ) -> bytes | None:
-        resolved = self._resolve_target(target)
-        if not resolved:
+        result = await self._transport_get(
+            target,
+            path,
+            query=query,
+            retries=retries,
+            control=control,
+            timeout=timeout,
+            hold_slot=hold_slot,
+        )
+        if not result.ok:
             return None
-        sanitized, port = resolved
-        endpoint_key = format_endpoint(sanitized, port)
-        if not self.settings.is_allowed_device_ip(sanitized):
-            logger.warning("blocked_non_private_ip", extra={"device_ip": sanitized})
-            return None
-        if control:
-            await self._rate.wait(endpoint_key)
-        url = self._url(sanitized, path, query, port=port)
-        last_error: Exception | None = None
-        for attempt in range(retries if not control else 1):
-            try:
-                async with self._call_slot(hold_slot):
-                    response = await self._follow_get(sanitized, url, timeout=timeout)
-                if response is None:
-                    return None
-                if response.status_code >= 400:
-                    logger.debug(
-                        "bluos_http_error endpoint=%s path=%s status=%s",
-                        endpoint_key,
-                        path,
-                        response.status_code,
-                    )
-                    return None
-                content = response.content
-                if len(content) > self.settings.max_xml_size:
-                    logger.warning(
-                        "payload_too_large endpoint=%s path=%s",
-                        endpoint_key,
-                        path,
-                    )
-                    return None
-                return content
-            except (httpx.TimeoutException, httpx.TransportError, OSError) as exc:
-                last_error = exc
-                if attempt + 1 >= retries or control:
-                    break
-                # Jitter the backoff: a LAN blip fails every device at once, and
-                # a fixed delay would march them all back in lockstep.
-                base = min(10.0, (2**attempt) + 0.1)
-                await asyncio.sleep(base * (0.5 + random.random() / 2))
-        if last_error:
-            logger.debug(
-                "bluos_request_failed endpoint=%s path=%s err=%s",
-                endpoint_key,
-                path,
-                last_error,
-            )
-        return None
+        return result.body
+
+    async def _control_get(
+        self,
+        target: str,
+        path: str,
+        *,
+        query: str = "",
+        allow_plain: bool = False,
+    ) -> CallResult:
+        transport = await self._transport_get(target, path, query=query, control=True)
+        if not transport.ok:
+            note_control_result(transport)
+            return transport
+        classified = classify_control_body(
+            transport.body,
+            self.settings,
+            target,
+            allow_plain=allow_plain,
+            empty_ok=True,
+        )
+        note_control_result(classified)
+        return classified
+
+    def _ok(self, result: CallResult) -> bool:
+        """Bool so existing ``is True`` / ``is False`` checks keep working."""
+        note_control_result(result)
+        return True if result.ok else False
 
     async def _post(
         self,
@@ -220,30 +278,52 @@ class BluOSTransport:
         *,
         data: dict[str, str] | None = None,
         control: bool = False,
+        allow_plain: bool = False,
     ) -> bool:
         resolved = self._resolve_target(target)
         if not resolved:
-            return False
+            return self._ok(CallResult.failure("rejected", "invalid target"))
         sanitized, port = resolved
         endpoint_key = format_endpoint(sanitized, port)
         if not self.settings.is_allowed_device_ip(sanitized):
             logger.warning("blocked_non_private_ip", extra={"device_ip": sanitized})
-            return False
+            return self._ok(CallResult.failure("rejected", "ip not allowed"))
         if control:
             await self._rate.wait(endpoint_key)
         url = self._url(sanitized, path, port=port)
         try:
             async with self._sem:
                 response = await self._follow_post(sanitized, url, data or {})
-            return response is not None and response.status_code < 400
-        except (httpx.TimeoutException, httpx.TransportError, OSError) as exc:
+            if response is None:
+                return self._ok(CallResult.failure("rejected", "redirect blocked"))
+            if response.status_code >= 400:
+                return self._ok(CallResult.failure("http_status", str(response.status_code)))
+            if control:
+                classified = classify_control_body(
+                    response.content,
+                    self.settings,
+                    target,
+                    allow_plain=allow_plain,
+                    empty_ok=True,
+                )
+                return self._ok(classified)
+            return True
+        except httpx.TimeoutException as exc:
             logger.debug(
                 "bluos_post_failed endpoint=%s path=%s err=%s",
                 endpoint_key,
                 path,
                 exc,
             )
-            return False
+            return self._ok(CallResult.failure("timeout", type(exc).__name__))
+        except (httpx.TransportError, OSError) as exc:
+            logger.debug(
+                "bluos_post_failed endpoint=%s path=%s err=%s",
+                endpoint_key,
+                path,
+                exc,
+            )
+            return self._ok(CallResult.failure("transport", type(exc).__name__))
 
     async def _get_text(self, ip: str, path: str) -> str | None:
         raw = await self._get(ip, path)

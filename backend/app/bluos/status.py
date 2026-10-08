@@ -304,7 +304,9 @@ class BluOSStatusMixin(BluOSTransport):
             if reuse_sync and previous is not None
             else self._shell_player(sanitized, port, device_id, node_id)
         )
-        if not sync_xml and not status_xml and not reuse_sync:
+        # SyncStatus alone is not a live player. A missed /Status used to look
+        # healthy, clear the failure count, and hide the outage.
+        if not status_xml and not reuse_sync:
             player.status = "offline"
             return PlayerSnapshot(player)
 

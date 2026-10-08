@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 import httpx
 
+from app.bluos.result import CallResult, classify_control_body
 from app.bluos.transport import BluOSTransport
 from app.bluos.xml import safe_parse_xml
 from app.models import (
@@ -186,10 +187,25 @@ class BluOSWebUIMixin(BluOSTransport):
         try:
             async with self._sem:
                 response = await self._follow_post(sanitized, url, data)
-            return response is not None and response.status_code < 400
-        except (httpx.TimeoutException, httpx.TransportError, OSError) as exc:
+            if response is None:
+                return self._ok(CallResult.failure("rejected", "redirect blocked"))
+            if response.status_code >= 400:
+                return self._ok(CallResult.failure("http_status", str(response.status_code)))
+            return self._ok(
+                classify_control_body(
+                    response.content,
+                    self.settings,
+                    sanitized,
+                    allow_plain=True,
+                    empty_ok=True,
+                )
+            )
+        except httpx.TimeoutException as exc:
             logger.debug("web_ui_post_failed ip=%s path=%s err=%s", sanitized, path, exc)
-            return False
+            return self._ok(CallResult.failure("timeout", type(exc).__name__))
+        except (httpx.TransportError, OSError) as exc:
+            logger.debug("web_ui_post_failed ip=%s path=%s err=%s", sanitized, path, exc)
+            return self._ok(CallResult.failure("transport", type(exc).__name__))
 
     @staticmethod
     def _parse_diagnostics_html(html: str) -> dict[str, str]:
@@ -354,17 +370,17 @@ class BluOSWebUIMixin(BluOSTransport):
         if path.startswith("/") and "://" not in path:
             path_only = path.split("?", 1)[0]
             if path_only.lower() == "/name":
-                raw = await self._get(
-                    ip, "/Name", query=f"name={quote(value)}", control=True
-                )
+                result = await self._control_get(ip, "/Name", query=f"name={quote(value)}")
             else:
-                raw = await self._get(
+                result = await self._control_get(
                     ip,
                     path_only,
                     query=f"{quote(sid, safe='-_.')}={quote(value, safe=',.-')}",
-                    control=True,
                 )
-            ok = raw is not None
+            # A BluOS <error> is the player's answer. Do not also POST the web UI.
+            if result.kind == "bluos_error":
+                return self._ok(result)
+            ok = self._ok(result)
         if not ok:
             ok = await self._post_web_ui(
                 ip,

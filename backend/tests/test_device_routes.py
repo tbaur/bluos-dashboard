@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -178,13 +179,17 @@ async def test_get_device_and_diagnose(settings: Settings, monkeypatch: pytest.M
 @pytest.mark.asyncio
 async def test_readyz_and_refresh(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
     app, client, _, poller = await app_with_players(settings, monkeypatch)
-    poller.last_poll_at = 1.0
+    poller.last_poll_at = time.time()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http:
         ready = await http.get("/api/v1/readyz")
         assert ready.status_code == 200
         assert ready.json()["status"] == "ok"
+        assert "stale_count" in ready.json()["details"]
+        poller.last_poll_at = 1.0
+        stalled = await http.get("/api/v1/readyz")
+        assert stalled.status_code == 503
 
         refreshed = await http.post("/api/v1/devices/refresh")
         assert refreshed.status_code == 200
@@ -668,7 +673,7 @@ async def test_settings_upgrade_and_fleet_firmware(
         )
         assert write.status_code == 204
         client.set_device_setting.assert_awaited_once()
-        assert client.set_device_setting.await_args.kwargs.get("control_path") == "/audiomodes"
+        assert client.set_device_setting.await_args.kwargs.get("control_path") == ""
 
         upgrade = await http.get("/api/v1/devices/player-kitchen/upgrade")
         assert upgrade.status_code == 200

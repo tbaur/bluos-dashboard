@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.bluos.result import classify_control_body
 from app.bluos.status import BluOSStatusMixin
-from app.bluos.xml import safe_parse_xml
 from app.validators import format_endpoint
 
 logger = logging.getLogger(__name__)
@@ -19,18 +19,11 @@ class BluOSSyncMixin(BluOSStatusMixin):
 
     def _bluos_response_ok(self, content: bytes | None, context: str = "") -> bool:
         """True when BluOS returned a non-error XML body (structure-capped parse)."""
-        if not content:
-            return False
-        root = safe_parse_xml(content, self.settings, context or "bluos")
-        if root is None:
-            return False
-        tag = root.tag.lower()
-        if tag == "error" or root.find("error") is not None:
-            return False
-        # Some firmwares wrap errors as <response><error>…</error></response>.
-        if tag.endswith("error"):
-            return False
-        return True
+        return classify_control_body(
+            content,
+            self.settings,
+            context or "bluos",
+        ).ok
 
     async def player_is_ungrouped(self, endpoint: str) -> bool | None:
         """Return True if standalone, False if still has a master, None if unreachable."""

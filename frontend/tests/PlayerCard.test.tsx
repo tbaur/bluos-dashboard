@@ -81,7 +81,7 @@ describe('PlayerRow', () => {
   it('renders now playing and pauses on click', async () => {
     render(
       <MemoryRouter>
-        <PlayerRow device={sample} />
+        <PlayerRow deviceId={sample.id} />
       </MemoryRouter>,
     );
     expect(screen.getByRole('link', { name: 'Kitchen' })).toHaveAttribute(
@@ -106,7 +106,7 @@ describe('PlayerRow', () => {
     useFleetStore.setState({ devices: [sample, follower] });
     render(
       <MemoryRouter>
-        <PlayerRow device={follower} />
+        <PlayerRow deviceId={follower.id} />
       </MemoryRouter>,
     );
     expect(screen.getByText('Follows Kitchen')).toBeInTheDocument();
@@ -129,7 +129,7 @@ describe('PlayerRow', () => {
     });
     render(
       <MemoryRouter>
-        <PlayerRow device={follower} />
+        <PlayerRow deviceId={follower.id} />
       </MemoryRouter>,
     );
     expect(screen.queryByText(/Follows/)).not.toBeInTheDocument();
@@ -153,7 +153,7 @@ describe('PlayerRow', () => {
     useFleetStore.setState({ devices: [sample, c658] });
     render(
       <MemoryRouter>
-        <PlayerRow device={c658} />
+        <PlayerRow deviceId={c658.id} />
       </MemoryRouter>,
     );
     expect(screen.queryByText('link')).not.toBeInTheDocument();

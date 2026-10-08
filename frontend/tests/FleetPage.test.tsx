@@ -14,8 +14,8 @@ vi.mock('@/components/SyncPanel', () => ({
 }));
 
 vi.mock('@/components/PlayerCard', () => ({
-  PlayerRow: ({ device }: { device: PlayerStatus }) => (
-    <div data-testid="player-row">{device.name}</div>
+  PlayerRow: ({ deviceId }: { deviceId: string }) => (
+    <div data-testid="player-row">{deviceId}</div>
   ),
 }));
 

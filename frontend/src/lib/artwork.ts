@@ -15,8 +15,25 @@ export function safeImageSrc(src: string | null | undefined): string {
   if (INLINE_IMAGE.test(value)) return value;
   try {
     const url = new URL(value, window.location.origin);
-    return ALLOWED_PROTOCOLS.has(url.protocol) ? value : '';
+    if (!ALLOWED_PROTOCOLS.has(url.protocol)) return '';
+    // Cover art is served by this dashboard. A player URL would make the
+    // browser call a host the viewer did not choose.
+    if (url.origin !== window.location.origin) return '';
+    return value;
   } catch {
     return '';
   }
+}
+
+/** Same-origin art URL for a player. Empty when the player has no image.
+
+The image address is part of the URL. BluOS changes that address when the song
+changes, and a single `/art` path would keep showing the first cover.
+*/
+export function playerArtSrc(deviceId: string, image: string | null | undefined): string {
+  const value = (image ?? '').trim();
+  if (!value) return '';
+  if (INLINE_IMAGE.test(value)) return value;
+  const params = new URLSearchParams({ image: value });
+  return `/api/v1/devices/${encodeURIComponent(deviceId)}/art?${params.toString()}`;
 }

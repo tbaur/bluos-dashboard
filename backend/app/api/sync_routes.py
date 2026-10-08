@@ -39,8 +39,8 @@ async def sync_state(state: StateDep) -> SyncState:
 
 @router.post("/sync/add", status_code=204)
 async def sync_add(body: SyncPairRequest, state: StateDep) -> Response:
-    master_ip = require_device(state, body.master_id)
-    slave_ip = require_device(state, body.slave_id)
+    master_ip = await require_device(state, body.master_id)
+    slave_ip = await require_device(state, body.slave_id)
     if master_ip == slave_ip:
         raise AppError(400, "invalid_sync_pair", "Master and slave must differ")
     await begin_control(state, [body.master_id, body.slave_id])
@@ -67,7 +67,7 @@ async def sync_add(body: SyncPairRequest, state: StateDep) -> Response:
 @router.post("/sync/enable", response_model=SyncEnableResponse)
 async def sync_enable(body: SyncEnableRequest, state: StateDep) -> SyncEnableResponse:
     """Group all free (standalone) rooms under one primary — never steal from existing groups."""
-    primary_ip = require_device(state, body.primary_id)
+    primary_ip = await require_device(state, body.primary_id)
     snapshot = state.discovery.snapshot
     sync = build_sync_state(snapshot.devices)
     free_ids = set(sync.standalone_ids)
@@ -114,8 +114,8 @@ async def sync_enable(body: SyncEnableRequest, state: StateDep) -> SyncEnableRes
 
 @router.post("/sync/remove", status_code=204)
 async def sync_remove(body: SyncPairRequest, state: StateDep) -> Response:
-    slave_ip = require_device(state, body.slave_id)
-    master_ip = resolve_sync_master(state, body.master_id, body.slave_id)
+    slave_ip = await require_device(state, body.slave_id)
+    master_ip = await resolve_sync_master(state, body.master_id, body.slave_id)
     donors = sync_donor_endpoints(state, master_ip, slave_ip)
     await begin_control(state, [body.master_id, body.slave_id])
     logger.info(
@@ -174,12 +174,12 @@ async def sync_break(state: StateDep) -> FleetActionResponse:
                 group.primary_endpoint or group.primary_ip,
             )
         else:
-            master_ip = require_device(state, group.primary_id)
+            master_ip = await require_device(state, group.primary_id)
             affected.add(group.primary_id)
 
         slave_endpoints: list[str] = []
         for slave_id in group.slave_ids:
-            slave_endpoints.append(require_device(state, slave_id))
+            slave_endpoints.append(await require_device(state, slave_id))
         # Do not use siblings in the same break as reparent donors.
         donors = sync_donor_endpoints(state, master_ip, *slave_endpoints)
         by_id = {d.id: d for d in snapshot.devices}
@@ -189,7 +189,7 @@ async def sync_break(state: StateDep) -> FleetActionResponse:
             _master_ip: str = master_ip,
             _donors: list[str] = donors,
         ) -> bool:
-            slave_ip = require_device(state, slave_id)
+            slave_ip = await require_device(state, slave_id)
             return await state.client.remove_sync_slave(
                 _master_ip,
                 slave_ip,
@@ -216,7 +216,7 @@ async def sync_break(state: StateDep) -> FleetActionResponse:
             if not ok:
                 continue
             removed_any = True
-            slave_ip = require_device(state, slave_id)
+            slave_ip = await require_device(state, slave_id)
             slave_stops.append((slave_id, slave_ip))
             affected.add(slave_id)
         # Only stop the primary when it no longer has followers (mirror sync/remove).

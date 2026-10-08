@@ -172,12 +172,20 @@ async def test_poll_once_marks_exception_offline(
     monkeypatch.setattr(client, "load_player", boom)
     await poller._poll_once()
     updated = discovery.snapshot.devices[0]
-    assert updated.status == "offline"
+    # One miss keeps the room up. The circuit threshold (2 in this fixture) flips it offline.
+    assert updated.status == "online"
+    assert updated.stale is True
+    assert updated.name == "K"
     assert updated.consecutive_failures == 1
     drops = poller.health.snapshot().drops
     assert len(drops) == 1
     assert drops[0].device_id == "p1"
     assert drops[0].ended_at is None
+    await poller._poll_once()
+    offline = discovery.snapshot.devices[0]
+    assert offline.status == "offline"
+    assert offline.stale is False
+    assert offline.name == "K"
     await client.aclose()
 
 
@@ -443,6 +451,137 @@ async def test_interrupt_without_inflight_is_a_noop(settings: Settings) -> None:
     events = EventBus()
     poller = StatusPoller(settings, discovery, client, events)
     await poller.interrupt(["missing"])
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_refresh_one_keeps_the_room_when_status_is_missing(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(
+        id="p1", ip="192.168.1.20", name="Kitchen", status="online", volume=22, track="Song"
+    )
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.endpoints_by_id[player.id] = player.endpoint
+    poller = StatusPoller(settings, discovery, client, EventBus())
+
+    async def missed(target: str, **_kwargs: object) -> PlayerSnapshot:
+        return PlayerSnapshot(
+            player=PlayerStatus(id="p1", ip="192.168.1.20", status="offline", name="Unknown")
+        )
+
+    monkeypatch.setattr(client, "load_player", missed)
+    updated = await poller.refresh_one("p1")
+    assert updated is not None
+    assert updated.name == "Kitchen"
+    assert updated.volume == 22
+    assert updated.track == "Song"
+    assert updated.stale is True
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_refresh_one_keeps_a_moved_address(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online", volume=10)
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.endpoints_by_id[player.id] = player.endpoint
+    poller = StatusPoller(settings, discovery, client, EventBus())
+
+    async def moved(target: str, **_kwargs: object) -> PlayerSnapshot:
+        current = player.model_copy(update={"ip": "192.168.1.30"})
+        discovery._snapshot.devices = [current]
+        discovery._snapshot.endpoints_by_id = {current.id: current.endpoint}
+        return PlayerSnapshot(
+            player=PlayerStatus(id="p1", ip="192.168.1.20", status="online", volume=1)
+        )
+
+    monkeypatch.setattr(client, "load_player", moved)
+    updated = await poller.refresh_one("p1")
+    assert updated is not None
+    assert updated.ip == "192.168.1.30"
+    assert updated.volume == 10
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_refresh_one_without_a_room_ignores_an_offline_shell(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    discovery._snapshot.endpoints_by_id["p1"] = "192.168.1.20:11000"
+    poller = StatusPoller(settings, discovery, client, EventBus())
+
+    async def missed(target: str, **_kwargs: object) -> PlayerSnapshot:
+        return PlayerSnapshot(player=PlayerStatus(id="p1", ip="192.168.1.20", status="offline"))
+
+    monkeypatch.setattr(client, "load_player", missed)
+    assert await poller.refresh_one("p1") is None
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_cycle_ignores_a_reply_from_the_old_address(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="node-1", ip="192.168.1.20", name="K", status="online", volume=10)
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.endpoints_by_id[player.id] = player.endpoint
+    poller = StatusPoller(settings, discovery, client, EventBus())
+
+    async def moved(target: str, **_kwargs: object) -> PlayerSnapshot:
+        current = player.model_copy(update={"ip": "192.168.1.30", "volume": 10})
+        discovery._snapshot.devices = [current]
+        discovery._snapshot.endpoints_by_id = {current.id: current.endpoint}
+        discovery._snapshot.ids_by_endpoint = {current.endpoint: current.id}
+        return PlayerSnapshot(
+            player=PlayerStatus(id="node-1", ip="192.168.1.20", name="K", status="online", volume=1)
+        )
+
+    monkeypatch.setattr(client, "load_player", moved)
+    await poller._cycle_device(player)
+    stored = discovery.get_device("node-1")
+    assert stored is not None
+    assert stored.ip == "192.168.1.30"
+    assert stored.volume == 10
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_failed_cycle_does_not_overwrite_a_newer_refresh(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online", volume=10)
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.endpoints_by_id[player.id] = player.endpoint
+    poller = StatusPoller(settings, discovery, client, EventBus())
+
+    async def fail_after_refresh(target: str, **_kwargs: object) -> PlayerSnapshot:
+        newer = player.model_copy(update={"volume": 40})
+        await discovery.update_device(newer)
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(client, "load_player", fail_after_refresh)
+    await poller._cycle_device(player)
+    stored = discovery.get_device("p1")
+    assert stored is not None
+    assert stored.volume == 40
+    assert stored.stale is False
     await client.aclose()
 
 
