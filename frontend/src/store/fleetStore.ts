@@ -135,6 +135,13 @@ function applyPlaybackHold(incoming: PlayerStatus, previous: PlayerStatus): Play
   const keepMeta = !hasTrackMeta(incoming) && hasTrackMeta(previous);
   const keepSecs = keepMeta || (hasTrackMeta(incoming) && isSameTrack(incoming, previous));
   const meta = keepMeta ? previous : incoming;
+  // A skip often arrives with an empty image for a moment. Keep the last cover
+  // then. A new track that already has its own image must replace it, or the
+  // hold eats the only event and the old cover stays up.
+  const image =
+    incoming.image && hasTrackMeta(incoming) && !isSameTrack(incoming, previous)
+      ? incoming.image
+      : previous.image || incoming.image;
   return {
     ...incoming,
     state: previous.state,
@@ -144,7 +151,7 @@ function applyPlaybackHold(incoming: PlayerStatus, previous: PlayerStatus): Play
     track: meta.track,
     artist: meta.artist,
     album: meta.album,
-    image: previous.image || incoming.image,
+    image,
     totlen: keepMeta || incoming.totlen <= 0 ? previous.totlen : incoming.totlen,
     quality: meta.quality,
     stream_format: meta.stream_format,

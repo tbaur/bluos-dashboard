@@ -67,12 +67,15 @@ async def refresh_devices(state: StateDep) -> DevicesResponse:
     )
 
 @router.get("/devices/{device_id}/art")
-async def device_art(device_id: str, state: StateDep) -> Response:
+async def device_art(device_id: str, state: StateDep, image: str = "") -> Response:
     endpoint = await require_device(state, device_id)
     device = state.discovery.get_device(device_id)
-    if device is None or not device.image:
+    # The query names the cover the page is showing. Fall back to the live
+    # snapshot when an older client asks for the room without one.
+    target = image.strip() or (device.image if device is not None else "")
+    if not target:
         raise AppError(404, "artwork_not_found", "No artwork for this player")
-    fetched = await state.client.fetch_artwork(endpoint, device.image)
+    fetched = await state.client.fetch_artwork(endpoint, target)
     if fetched is None:
         raise AppError(404, "artwork_not_found", "Artwork unavailable")
     body, media_type = fetched

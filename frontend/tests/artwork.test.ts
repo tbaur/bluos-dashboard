@@ -3,9 +3,11 @@ import { playerArtSrc, safeImageSrc } from '@/lib/artwork';
 
 describe('safeImageSrc', () => {
   it('sends player artwork through the dashboard', () => {
-    expect(playerArtSrc('player-1', 'http://192.168.1.10:11000/Artwork?service=Local')).toBe(
-      '/api/v1/devices/player-1/art',
-    );
+    const first = playerArtSrc('player-1', 'http://192.168.1.10:11000/images/one.jpg');
+    const second = playerArtSrc('player-1', 'http://192.168.1.10:11000/images/two.jpg');
+    expect(first).toContain('/api/v1/devices/player-1/art?');
+    expect(first).not.toBe(second);
+    expect(first).toContain('one.jpg');
     expect(safeImageSrc('http://192.168.1.10:11000/Artwork?service=Local')).toBe('');
     expect(safeImageSrc('https://cdn.example.com/a.jpg')).toBe('');
   });

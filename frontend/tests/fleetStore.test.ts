@@ -145,7 +145,7 @@ describe('fleetStore', () => {
     expect(device.totlen).toBe(180);
   });
 
-  it('keeps artwork through a new track while playback is held', () => {
+  it('shows the new cover when a held skip already has the next image', () => {
     useFleetStore.getState().setFleet([
       { ...sample, image: 'http://art/a.jpg', totlen: 200, secs: 40, state: 'play' },
     ]);
@@ -163,7 +163,7 @@ describe('fleetStore', () => {
     ]);
     const device = useFleetStore.getState().devices[0];
     expect(device.track).toBe('Next');
-    expect(device.image).toBe('http://art/a.jpg');
+    expect(device.image).toBe('http://art/b.jpg');
   });
 
   it('keeps duration when a new track has no totlen yet', () => {
@@ -247,6 +247,21 @@ describe('fleetStore', () => {
     const den = useFleetStore.getState().devices.find((d) => d.id === 'player-2');
     expect(den?.sync_role).toBe('standalone');
     expect(den?.master).toBe('');
+  });
+
+  it('keeps the last cover when a held update has no image yet', () => {
+    useFleetStore.getState().setFleet([
+      { ...sample, image: 'http://player/images/one.jpg', track: 'One', artist: 'A' },
+    ]);
+    useFleetStore.getState().holdPlayback('player-1', 10_000);
+    useFleetStore.getState().upsertDevice({
+      ...sample,
+      image: '',
+      track: '',
+      artist: '',
+    });
+    expect(useFleetStore.getState().devices[0]?.image).toBe('http://player/images/one.jpg');
+    expect(useFleetStore.getState().devices[0]?.track).toBe('One');
   });
 
   it('does not roll back a newer volume when an older control fails', async () => {

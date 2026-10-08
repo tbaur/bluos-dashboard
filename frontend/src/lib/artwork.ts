@@ -25,10 +25,15 @@ export function safeImageSrc(src: string | null | undefined): string {
   }
 }
 
-/** Same-origin art URL for a player. Empty when the player has no image. */
+/** Same-origin art URL for a player. Empty when the player has no image.
+
+The image address is part of the URL. BluOS changes that address when the song
+changes, and a single `/art` path would keep showing the first cover.
+*/
 export function playerArtSrc(deviceId: string, image: string | null | undefined): string {
   const value = (image ?? '').trim();
   if (!value) return '';
   if (INLINE_IMAGE.test(value)) return value;
-  return `/api/v1/devices/${encodeURIComponent(deviceId)}/art`;
+  const params = new URLSearchParams({ image: value });
+  return `/api/v1/devices/${encodeURIComponent(deviceId)}/art?${params.toString()}`;
 }
