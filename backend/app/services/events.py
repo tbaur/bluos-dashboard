@@ -32,9 +32,14 @@ class EventBus:
             self._subscribers.discard(queue)
 
     async def publish(self, event_type: str, data: Any) -> None:
-        payload = json.dumps({"type": event_type, "data": data}, default=str)
+        # Hold the lock across encode and enqueue so a subscriber cannot copy a
+        # newer snapshot and then apply this older payload.
         async with self._lock:
+            payload = json.dumps({"type": event_type, "data": data}, default=str)
             subscribers = list(self._subscribers)
+            self._fanout(subscribers, payload)
+
+    def _fanout(self, subscribers: list[asyncio.Queue[str]], payload: str) -> None:
         for queue in subscribers:
             try:
                 queue.put_nowait(payload)

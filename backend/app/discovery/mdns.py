@@ -95,8 +95,12 @@ class StandingMDNS:
 
     def __init__(self) -> None:
         self._by_name: dict[str, str] = {}
+        self._generation: dict[str, int] = {}
+        self._retry_after: dict[str, float] = {}
+        self._retry_item: dict[str, tuple[str, int]] = {}
+        self._retry_attempts: dict[str, int] = {}
         self._lock = threading.Lock()
-        self._queue: queue.Queue[tuple[str, str]] = queue.Queue()
+        self._queue: queue.Queue[tuple[str, str, int]] = queue.Queue()
         self._stop = threading.Event()
         self._zc: Zeroconf | None = None
         self._browsers: list[ServiceBrowser] = []
@@ -123,7 +127,8 @@ class StandingMDNS:
 
     def stop(self) -> None:
         self._stop.set()
-        self.running = False
+        with self._lock:
+            self.running = False
         for browser in self._browsers:
             browser.cancel()
         self._browsers.clear()
@@ -157,25 +162,79 @@ class StandingMDNS:
         # to be named zeroconf or every browse dies with TypeError.
         del zeroconf
         if state_change == ServiceStateChange.Removed:
+            self._bump(name)
             self.forget(name)
             return
         if state_change in (ServiceStateChange.Added, ServiceStateChange.Updated):
-            self._queue.put((service_type, name))
+            with self._lock:
+                generation = self._generation.get(name, 0)
+            self._queue.put((service_type, name, generation))
+
+    def _bump(self, name: str) -> None:
+        with self._lock:
+            self._generation[name] = self._generation.get(name, 0) + 1
+            self._clear_retry(name)
+
+    def _clear_retry(self, name: str) -> None:
+        self._retry_after.pop(name, None)
+        self._retry_item.pop(name, None)
+        self._retry_attempts.pop(name, None)
+
+    def _note_retry(self, service_type: str, name: str, generation: int) -> None:
+        """Queue another lookup. Zeroconf does not repeat Added after a miss."""
+        with self._lock:
+            if not self.running or self._generation.get(name, 0) != generation:
+                return
+            attempts = self._retry_attempts.get(name, 0) + 1
+            self._retry_attempts[name] = attempts
+            delay = min(30.0, float(attempts))
+            self._retry_after[name] = time.monotonic() + delay
+            self._retry_item[name] = (service_type, generation)
+
+    def _due_retries(self) -> list[tuple[str, str, int]]:
+        now = time.monotonic()
+        due: list[tuple[str, str, int]] = []
+        with self._lock:
+            ready = [name for name, when in self._retry_after.items() if when <= now]
+            for name in ready:
+                self._retry_after.pop(name, None)
+                item = self._retry_item.pop(name, None)
+                if item is None or not self.running:
+                    continue
+                service_type, generation = item
+                if self._generation.get(name, 0) != generation:
+                    self._retry_attempts.pop(name, None)
+                    continue
+                due.append((service_type, name, generation))
+        return due
+
+    def _apply_resolved(self, name: str, endpoint: str, generation: int) -> None:
+        """Ignore a lookup that finished after the service left."""
+        with self._lock:
+            if not self.running or self._generation.get(name, 0) != generation:
+                return
+            self._clear_retry(name)
+            self._by_name[name] = endpoint
 
     def _resolve_loop(self) -> None:
         while not self._stop.is_set():
+            for service_type, name, generation in self._due_retries():
+                self._queue.put((service_type, name, generation))
             try:
-                service_type, name = self._queue.get(timeout=0.5)
+                service_type, name, generation = self._queue.get(timeout=0.5)
             except queue.Empty:
                 continue
             zc = self._zc
-            if zc is None:
+            if zc is None or not self.running:
                 continue
             try:
                 info = zc.get_service_info(service_type, name, timeout=1000)
             except Exception:
                 logger.debug("mdns_resolve_failed name=%s", name, exc_info=True)
+                self._note_retry(service_type, name, generation)
                 continue
             endpoint = endpoint_from_service_info(info)
             if endpoint:
-                self.remember(name, endpoint)
+                self._apply_resolved(name, endpoint, generation)
+            else:
+                self._note_retry(service_type, name, generation)

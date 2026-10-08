@@ -8,7 +8,36 @@ import { ScrollToTop } from '@/components/ScrollToTop';
 import { useLiveFleet } from '@/hooks/useLiveFleet';
 
 export function App() {
-  const [authed, setAuthed] = useState(Boolean(apiToken));
+  const [authed, setAuthed] = useState(false);
+  const [bundleTokenRejected, setBundleTokenRejected] = useState(false);
+
+  useEffect(() => {
+    // <img> cannot send Authorization. Trade the built-in token for the
+    // session cookie before the first cover request.
+    if (!apiToken || authed || bundleTokenRejected) return;
+    let cancel = false;
+    fetch('/api/v1/session', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        'X-BSD-Request': '1',
+      },
+    })
+      .then((response) => {
+        if (cancel) return;
+        if (response.ok) setAuthed(true);
+        else setBundleTokenRejected(true);
+      })
+      .catch(() => {
+        if (!cancel) setBundleTokenRejected(true);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [authed, bundleTokenRejected]);
+
+  if (!authed && apiToken && !bundleTokenRejected) return null;
   if (!authed) return <SessionPrompt onReady={() => setAuthed(true)} />;
   return <Dashboard />;
 }
@@ -43,11 +72,11 @@ function SessionPrompt({ onReady }: { onReady: () => void }) {
     })
       .then((response) => {
         if (cancel) return;
-        if (response.status === 401) setChecking(false);
-        else onReady();
+        if (response.ok) onReady();
+        else setChecking(false);
       })
       .catch(() => {
-        if (!cancel) onReady();
+        if (!cancel) setChecking(false);
       });
     return () => {
       cancel = true;

@@ -1,7 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '@/App';
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({ status: 200, ok: true }),
+  );
+});
 
 vi.mock('@/hooks/useLiveFleet', () => ({
   useLiveFleet: () => undefined,
@@ -20,21 +27,32 @@ vi.mock('@/components/PlayerDetailPage', () => ({
 }));
 
 describe('App routes', () => {
-  it('renders the fleet page at /', () => {
+  it('renders the fleet page at /', async () => {
     render(
       <MemoryRouter>
         <App />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Fleet')).toBeInTheDocument();
+    expect(await screen.findByText('Fleet')).toBeInTheDocument();
   });
 
-  it('renders the house page at /house', () => {
+  it('shows the token form when the session probe fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByLabelText('API token')).toBeInTheDocument();
+    expect(screen.queryByText('Fleet')).not.toBeInTheDocument();
+  });
+
+  it('renders the house page at /house', async () => {
     render(
       <MemoryRouter initialEntries={['/house']}>
         <App />
       </MemoryRouter>,
     );
-    expect(screen.getByText('House')).toBeInTheDocument();
+    expect(await screen.findByText('House')).toBeInTheDocument();
   });
 });

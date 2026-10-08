@@ -12,6 +12,17 @@ from app.bluos.xml import safe_parse_xml, text
 from app.models import AudioInput, BluetoothResponse, Preset, QueueItem, QueueResponse
 from app.validators import sanitize_ip
 
+_ART_SUFFIXES = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif")
+_ART_HINTS = ("/artwork", "/images/", "/image/", "/var/data/")
+
+
+def _is_artwork_path(path: str) -> bool:
+    """Reject control verbs disguised as a cover URL. GET /Volume?level=0 is a command."""
+    lowered = (path or "").lower()
+    if any(hint in lowered for hint in _ART_HINTS):
+        return True
+    return lowered.endswith(_ART_SUFFIXES)
+
 
 class BluOSMediaMixin(BluOSStatusMixin):
     _INPUT_HINTS = (
@@ -244,6 +255,7 @@ class BluOSMediaMixin(BluOSStatusMixin):
         if not raw or raw.startswith("data:"):
             return None
         if raw.startswith("/"):
+            path = urlparse(raw).path
             url = f"http://{ip}:{port}{raw}"
         else:
             parsed = urlparse(raw)
@@ -251,7 +263,10 @@ class BluOSMediaMixin(BluOSStatusMixin):
             image_port = parsed.port or (443 if parsed.scheme == "https" else 80)
             if parsed.scheme not in {"http", "https"} or host != ip or image_port != port:
                 return None
+            path = parsed.path
             url = raw
+        if not _is_artwork_path(path):
+            return None
         try:
             async with self._sem:
                 response = await self._follow_get(

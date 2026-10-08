@@ -115,6 +115,7 @@ async def test_artwork_stays_on_the_player_host(settings: Settings) -> None:
             await client.fetch_artwork("192.168.1.20:11000", "http://10.1.1.1:11000/art")
             is None
         )
+        assert await client.fetch_artwork("192.168.1.20:11000", "/Volume?level=0") is None
     finally:
         await client.aclose()
 

@@ -74,6 +74,8 @@ class DiscoveryService:
         self._grace_until: dict[str, float] = {}
         self._grace_endpoints: dict[str, str] = {}
         self._grace_macs: dict[str, str] = {}
+        self._grace_confirmed_until: dict[str, float] = {}
+        self._state_rev: dict[str, int] = {}
         self.mdns = StandingMDNS()
 
     @property
@@ -101,23 +103,55 @@ class DiscoveryService:
         return time.time() < self._grace_until.get(device_id, 0.0)
 
     def is_known_endpoint(self, endpoint: str) -> bool:
-        """True when this process discovered the endpoint or still holds it in grace."""
+        """True for a live endpoint, unexpired grace, or a master a live player names.
+
+        After a restart the grace table is empty. A follower that still reports its
+        primary is enough to ungroup that orphan. An address nobody in the fleet
+        names is not.
+        """
         canonical = sanitize_endpoint(endpoint, default_port=self.settings.bluos_port)
         if not canonical:
             return False
         if canonical in self._snapshot.ids_by_endpoint:
             return True
-        return canonical in self._grace_endpoints.values()
+        now = time.time()
+        for device_id, grace_ep in self._grace_endpoints.items():
+            if grace_ep == canonical and now < self._grace_until.get(device_id, 0.0):
+                return True
+        for device in self._snapshot.devices:
+            claimed = sanitize_endpoint(device.master, default_port=self.settings.bluos_port)
+            if claimed == canonical:
+                return True
+        return False
 
     def grace_mac(self, device_id: str) -> str:
         if not self.is_in_grace(device_id):
             return ""
         return self._grace_macs.get(device_id, "")
 
+    def grace_recently_confirmed(self, device_id: str) -> bool:
+        return time.monotonic() < self._grace_confirmed_until.get(device_id, 0.0)
+
+    def note_grace_confirmed(self, device_id: str) -> None:
+        self._grace_confirmed_until[device_id] = time.monotonic() + 30.0
+
+    def state_revision(self, device_id: str) -> int:
+        """Bumps when a newer status is stored. A failed poll must not overwrite it."""
+        return self._state_rev.get(device_id, 0)
+
     def clear_grace(self, device_id: str) -> None:
         self._grace_until.pop(device_id, None)
         self._grace_endpoints.pop(device_id, None)
         self._grace_macs.pop(device_id, None)
+        self._grace_confirmed_until.pop(device_id, None)
+
+    def same_endpoint(self, left: str | None, right: str | None) -> bool:
+        if not left or not right:
+            return False
+        port = self.settings.bluos_port
+        return sanitize_endpoint(left, default_port=port) == sanitize_endpoint(
+            right, default_port=port
+        )
 
     def resolve_endpoint(self, device_id: str) -> str | None:
         endpoint = self._snapshot.endpoints_by_id.get(device_id)
@@ -351,8 +385,17 @@ class DiscoveryService:
         results = await asyncio.gather(*(one(e) for e in endpoints))
         return [p for p in results if p is not None]
 
-    async def update_device(self, player: PlayerStatus) -> None:
+    async def update_device(
+        self,
+        player: PlayerStatus,
+        *,
+        expect_revision: int | None = None,
+    ) -> bool:
         async with self._data_lock:
+            current_rev = self._state_rev.get(player.id, 0)
+            if expect_revision is not None and current_rev != expect_revision:
+                return False
+            self._state_rev[player.id] = current_rev + 1
             devices = [player if d.id == player.id else d for d in self._snapshot.devices]
             if not any(d.id == player.id for d in self._snapshot.devices):
                 devices.append(player)
@@ -368,3 +411,4 @@ class DiscoveryService:
                 port=player.port,
                 node_id=existing.node_id,
             )
+            return True

@@ -257,7 +257,7 @@ async def test_poller_clears_etag_when_player_goes_offline(settings: Settings) -
         assert missed.status == "online"
         assert missed.stale is True
         assert missed.track == "Song Title"
-        assert "p1" in poller._status_etags
+        assert "p1" not in poller._status_etags
         for _ in range(settings.circuit_failure_threshold - 1):
             await poller._poll_once()
         assert discovery.snapshot.devices[0].status == "offline"

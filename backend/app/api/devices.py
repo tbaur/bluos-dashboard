@@ -75,6 +75,8 @@ async def device_art(device_id: str, state: StateDep, image: str = "") -> Respon
     target = image.strip() or (device.image if device is not None else "")
     if not target:
         raise AppError(404, "artwork_not_found", "No artwork for this player")
+    # Free the status hold so the cover GET is not queued behind a 100s poll.
+    await state.poller.interrupt([device_id])
     fetched = await state.client.fetch_artwork(endpoint, target)
     if fetched is None:
         raise AppError(404, "artwork_not_found", "Artwork unavailable")

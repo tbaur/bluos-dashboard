@@ -110,6 +110,39 @@ def test_endpoint_from_service_info_skips_empty() -> None:
     assert endpoint_from_service_info(None) is None
 
 
+def test_stale_retry_generation_is_dropped() -> None:
+    browser = StandingMDNS()
+    browser.running = True
+    browser._note_retry("_musc._tcp.local.", "node", 0)
+    browser._generation["node"] = 1
+    browser._retry_after["node"] = 0
+    assert browser._due_retries() == []
+
+
+def test_failed_lookup_is_queued_again() -> None:
+    browser = StandingMDNS()
+    browser.running = True
+    browser._note_retry("_musc._tcp.local.", "node", 0)
+    assert browser._due_retries() == []
+    browser._retry_after["node"] = 0
+    assert browser._due_retries() == [("_musc._tcp.local.", "node", 0)]
+    browser._note_retry("_musc._tcp.local.", "node", 0)
+    browser._retry_after["node"] = 0
+    browser._bump("node")
+    assert browser._due_retries() == []
+
+
+def test_removed_service_is_not_restored_by_a_late_lookup() -> None:
+    browser = StandingMDNS()
+    browser.running = True
+    browser._apply_resolved("node", "192.168.1.50:11000", 0)
+    assert browser.endpoints() == ["192.168.1.50:11000"]
+    browser._bump("node")
+    browser.forget("node")
+    browser._apply_resolved("node", "192.168.1.50:11000", 0)
+    assert browser.endpoints() == []
+
+
 def test_standing_mdns_membership_updates_without_a_new_browser() -> None:
     browser = StandingMDNS()
     browser.remember("node", "192.168.1.50:11000")

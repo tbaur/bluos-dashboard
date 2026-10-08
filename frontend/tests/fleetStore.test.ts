@@ -249,6 +249,29 @@ describe('fleetStore', () => {
     expect(den?.master).toBe('');
   });
 
+  it('takes a later image for the same new track while playback is held', () => {
+    useFleetStore.getState().setFleet([
+      { ...sample, image: 'http://art/a.jpg', track: 'One', artist: 'A', state: 'play' },
+    ]);
+    useFleetStore.getState().holdPlayback('player-1', 10_000);
+    useFleetStore.getState().upsertDevice({
+      ...sample,
+      image: '',
+      track: 'Next',
+      artist: 'Other',
+      state: 'play',
+    });
+    expect(useFleetStore.getState().devices[0]?.image).toBe('http://art/a.jpg');
+    useFleetStore.getState().upsertDevice({
+      ...sample,
+      image: 'http://art/b.jpg',
+      track: 'Next',
+      artist: 'Other',
+      state: 'play',
+    });
+    expect(useFleetStore.getState().devices[0]?.image).toBe('http://art/b.jpg');
+  });
+
   it('keeps the last cover when a held update has no image yet', () => {
     useFleetStore.getState().setFleet([
       { ...sample, image: 'http://player/images/one.jpg', track: 'One', artist: 'A' },

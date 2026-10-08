@@ -23,8 +23,7 @@ async def events(request: Request, state: StateDep) -> StreamingResponse:
         # after the snapshot would paint an older volume on top of a newer one.
         queue = await state.events.subscribe()
         try:
-            initial = ""
-            for _ in range(8):
+            async with state.events._lock:
                 while True:
                     try:
                         queue.get_nowait()
@@ -37,8 +36,6 @@ async def events(request: Request, state: StateDep) -> StreamingResponse:
                     },
                     default=str,
                 )
-                if queue.empty():
-                    break
             yield f"data: {initial}\n\n"
             while True:
                 if await request.is_disconnected():

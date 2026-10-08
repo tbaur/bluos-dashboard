@@ -82,16 +82,35 @@ async def _confirm_grace_mac(state: AppState, device_id: str, endpoint: str) -> 
             extra={"op": "resolve", "device_id": device_id, "device_ip": endpoint},
         )
         return
+    if state.discovery.grace_recently_confirmed(device_id):
+        return
     await begin_control(state, [device_id])
     live = await state.client.get_player_status(endpoint, device_id=device_id)
     live_mac = normalize_bluos_mac(live.mac)
-    if live.status != "online" or not live_mac or live_mac != expected:
+    if live.status == "online" and live_mac == expected:
+        state.discovery.note_grace_confirmed(device_id)
+        return
+    if live.status == "online" and live_mac and live_mac != expected:
         state.discovery.clear_grace(device_id)
         raise AppError(
             409,
             "grace_mac_mismatch",
             "Player at the last address no longer matches",
         )
+    if live.status == "online" and not live_mac:
+        # Online with no MAC is not a different device. /SyncStatus can fail
+        # while /Status succeeds, and that must not block every later command.
+        logger.info(
+            "grace_mac_unverified",
+            extra={"op": "resolve", "device_id": device_id, "device_ip": endpoint},
+        )
+        return
+    # A timeout is not a different device. Keep the address so the next click can retry.
+    raise AppError(
+        409,
+        "grace_unreachable",
+        "Could not confirm the player at the last address",
+    )
 
 
 def allow_master_endpoint(state: AppState, endpoint: str) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import time
 
 from fastapi import APIRouter, Request, Response
@@ -64,8 +65,13 @@ async def open_session(request: Request) -> Response:
     """
     header = request.headers.get("authorization", "")
     token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-    # Middleware already compared this bearer to BSD_API_TOKEN.
-    if not token:
+    configured = ""
+    app_state = getattr(request.app.state, "app_state", None)
+    if app_state is not None:
+        configured = app_state.settings.api_token.strip()
+    token_bytes = token.encode("utf-8")
+    expected = configured.encode("utf-8")
+    if not expected or not hmac.compare_digest(token_bytes, expected):
         raise AppError(401, "unauthorized", "Valid API token required")
     response = Response(status_code=204)
     response.set_cookie(

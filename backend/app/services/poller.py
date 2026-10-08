@@ -89,6 +89,20 @@ class StatusPoller:
             self._task = None
         self.running = False
 
+    async def _publish_update(
+        self,
+        device_id: str,
+        stored: PlayerStatus,
+        *,
+        fleet_before: tuple[object, ...] | None = None,
+    ) -> None:
+        """Publish one player, or the fleet when membership or health changed."""
+        before = self._fleet_signature() if fleet_before is None else fleet_before
+        if self._fleet_signature() == before:
+            await self.events.publish("device", stored.model_dump())
+        else:
+            await self.events.publish("fleet", self.fleet_payload())
+
     def fleet_payload(self) -> dict[str, Any]:
         snapshot = self.discovery.snapshot
         return {
@@ -105,16 +119,37 @@ class StatusPoller:
         existing = self.discovery.get_device(device_id)
         if existing is not None and existing.status == "online":
             self.health.note_seen_online(existing.id, time.time())
+        revision = self.discovery.state_revision(device_id)
         snap = await self.client.load_player(endpoint, device_id=device_id)
+        # Discovery moved this id while the read was in flight. Keep the new address.
+        moved = self.discovery.resolve_endpoint(device_id)
+        if moved is not None and not self.discovery.same_endpoint(moved, endpoint):
+            return self.discovery.get_device(device_id)
+        if snap.player.status != "online":
+            # A missed /Status is an empty shell. Do not replace the room with it.
+            self._forget_tags(device_id)
+            if existing is None:
+                return None
+            player = self._mark_unreachable(
+                existing,
+                RuntimeError(snap.player.status or "unreachable"),
+            )
+            fleet_before = self._fleet_signature()
+            wrote = await self.discovery.update_device(player, expect_revision=revision)
+            if not wrote:
+                return self.discovery.get_device(device_id)
+            stored = self.discovery.get_device(device_id) or player
+            await self._publish_update(device_id, stored, fleet_before=fleet_before)
+            return stored
         self._remember_tags(device_id, snap)
-        self._record_result(snap.player)
+        player = snap.player
+        if player.stale:
+            player = player.model_copy(update={"stale": False})
+        self._record_result(player)
         fleet_before = self._fleet_signature()
-        await self.discovery.update_device(snap.player)
-        stored = self.discovery.get_device(device_id) or snap.player
-        if self._fleet_signature() == fleet_before:
-            await self.events.publish("device", stored.model_dump())
-        else:
-            await self.events.publish("fleet", self.fleet_payload())
+        await self.discovery.update_device(player)
+        stored = self.discovery.get_device(device_id) or player
+        await self._publish_update(device_id, stored, fleet_before=fleet_before)
         return stored
 
     async def interrupt(self, device_ids: Sequence[str]) -> None:
@@ -215,10 +250,16 @@ class StatusPoller:
         await self._wait_gap(device.id)
         if self._stop.is_set():
             return
+        current = self.discovery.get_device(device.id)
+        if current is None:
+            return
+        device = current
         if device.status == "online":
             self.health.note_seen_online(device.id, time.time())
         self._last_status_at[device.id] = time.monotonic()
+        revision = self.discovery.state_revision(device.id)
         fleet_before = self._fleet_signature()
+        failed = False
         try:
             snap = await self._fetch_snapshot(device)
         except asyncio.CancelledError:
@@ -227,6 +268,7 @@ class StatusPoller:
             return
         except Exception as exc:
             player = self._mark_unreachable(device, exc)
+            failed = True
         else:
             if snap.player.status == "online":
                 self._remember_tags(device.id, snap)
@@ -239,17 +281,25 @@ class StatusPoller:
                     device,
                     RuntimeError(snap.player.status or "unreachable"),
                 )
-        if player.status == "offline":
+                failed = True
+        # The read used the address we started with. If discovery moved the id,
+        # writing this reply would point commands back at the old host.
+        moved = self.discovery.resolve_endpoint(device.id)
+        if moved is not None and not self.discovery.same_endpoint(moved, device.endpoint):
+            return
+        # Drop the etag on a miss so the next read is a short Status, not another
+        # 100s hold. A dead player then fails in the connect timeout.
+        if player.stale or player.status == "offline":
             self._forget_tags(device.id)
-        await self.discovery.update_device(player)
+        wrote = await self.discovery.update_device(
+            player,
+            expect_revision=revision if failed else None,
+        )
+        if not wrote:
+            return
         stored = self.discovery.get_device(device.id) or player
         self.last_poll_at = time.time()
-        # A track or seek tick only moves one player; sending the whole fleet on
-        # every poll costs O(devices) serialization and re-renders the whole UI.
-        if self._fleet_signature() == fleet_before:
-            await self.events.publish("device", stored.model_dump())
-        else:
-            await self.events.publish("fleet", self.fleet_payload())
+        await self._publish_update(device.id, stored, fleet_before=fleet_before)
 
     def _fleet_signature(self) -> tuple[object, ...]:
         """Fields that change the fleet-level payload (sync graph + health)."""
@@ -298,6 +348,8 @@ class StatusPoller:
         """
         kind = type(exc).__name__
         logger.debug("poll_device_error id=%s err=%s", device.id, exc)
+        # A status that landed while this read was failing is newer than `device`.
+        device = self.discovery.get_device(device.id) or device
         prev_failures = self._failures.get(device.id, 0)
         failures = prev_failures + 1
         self._failures[device.id] = failures

@@ -170,6 +170,91 @@ async def test_grace_mac_mismatch_drops_the_address() -> None:
 
 
 @pytest.mark.asyncio
+async def test_grace_probe_failure_keeps_the_address() -> None:
+    from app.api.common import _confirm_grace_mac
+    from app.api.errors import AppError
+    from app.services.events import EventBus
+    from app.services.poller import StatusPoller
+    from app.state import AppState
+
+    settings = Settings(allow_non_private_ips=True, control_rate_limit_seconds=0)
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    device_id = "player-grace"
+    discovery._grace_endpoints[device_id] = "192.168.1.20:11000"
+    discovery._grace_until[device_id] = time.time() + 60
+    discovery._grace_macs[device_id] = "90:56:82:00:00:01"
+    client.get_player_status = AsyncMock(  # type: ignore[method-assign]
+        return_value=PlayerStatus(id=device_id, ip="192.168.1.20", status="offline", mac="")
+    )
+    state = AppState(
+        settings=settings,
+        client=client,
+        discovery=discovery,
+        events=EventBus(),
+        poller=StatusPoller(settings, discovery, client, EventBus()),
+    )
+    with pytest.raises(AppError) as caught:
+        await _confirm_grace_mac(state, device_id, "192.168.1.20:11000")
+    assert caught.value.status_code == 409
+    assert discovery.resolve_endpoint(device_id) == "192.168.1.20:11000"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_grace_online_without_mac_still_allows_the_command() -> None:
+    from app.api.common import _confirm_grace_mac
+    from app.services.events import EventBus
+    from app.services.poller import StatusPoller
+    from app.state import AppState
+
+    settings = Settings(allow_non_private_ips=True, control_rate_limit_seconds=0)
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    device_id = "player-grace"
+    discovery._grace_endpoints[device_id] = "192.168.1.20:11000"
+    discovery._grace_until[device_id] = time.time() + 60
+    discovery._grace_macs[device_id] = "90:56:82:00:00:01"
+    client.get_player_status = AsyncMock(  # type: ignore[method-assign]
+        return_value=PlayerStatus(id=device_id, ip="192.168.1.20", status="online", mac="")
+    )
+    state = AppState(
+        settings=settings,
+        client=client,
+        discovery=discovery,
+        events=EventBus(),
+        poller=StatusPoller(settings, discovery, client, EventBus()),
+    )
+    await _confirm_grace_mac(state, device_id, "192.168.1.20:11000")
+    assert discovery.resolve_endpoint(device_id) == "192.168.1.20:11000"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_known_endpoint_accepts_a_followers_master_and_unexpired_grace() -> None:
+    settings = Settings(allow_non_private_ips=True)
+    client = BluOSClient(settings)
+    service = DiscoveryService(settings, client)
+    service._snapshot.devices = [
+        PlayerStatus(
+            id="follower",
+            ip="192.168.1.21",
+            status="online",
+            master="192.168.1.55:11000",
+            sync_role="synced",
+        )
+    ]
+    assert service.is_known_endpoint("192.168.1.55:11000")
+    assert not service.is_known_endpoint("192.168.1.99:11000")
+    service._grace_endpoints["old"] = "192.168.1.77:11000"
+    service._grace_until["old"] = time.time() - 5
+    assert not service.is_known_endpoint("192.168.1.77:11000")
+    service._grace_until["old"] = time.time() + 30
+    assert service.is_known_endpoint("192.168.1.77:11000")
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_grace_preserves_ip_after_drop(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(
         allow_non_private_ips=True,

@@ -138,10 +138,7 @@ function applyPlaybackHold(incoming: PlayerStatus, previous: PlayerStatus): Play
   // A skip often arrives with an empty image for a moment. Keep the last cover
   // then. A new track that already has its own image must replace it, or the
   // hold eats the only event and the old cover stays up.
-  const image =
-    incoming.image && hasTrackMeta(incoming) && !isSameTrack(incoming, previous)
-      ? incoming.image
-      : previous.image || incoming.image;
+  const image = incoming.image || previous.image;
   return {
     ...incoming,
     state: previous.state,
