@@ -6,9 +6,9 @@
 make run
 ```
 
-That starts the API, waits for `GET /api/v1/healthz`, then starts the UI (avoids Vite proxying to a dead API). It fails if the API or UI port is already in use; set `BSD_FORCE_FREE_PORTS=1` to kill those listeners.
+That installs dependencies if needed, starts the API with reload, waits for `GET /api/v1/healthz`, then starts the UI (so Vite never proxies to a dead API). Uvicorn or Vite exits with an error if its port is already in use. Ctrl-C stops both.
 
-The API bind comes from `BSD_HOST` / `BSD_PORT` — environment first, then the repo-root `.env`, else `127.0.0.1:8000` — and the Vite dev proxy follows the port. The UI stays on `127.0.0.1:8765`.
+The API bind comes from `BSD_HOST` / `BSD_PORT`, resolved by the backend's own settings loader: environment first, then the repo-root `.env`, else `127.0.0.1:8000`. The Vite dev proxy follows the port. The UI stays on `127.0.0.1:8765`.
 
 Or two terminals (start UI only after healthz returns 200):
 
@@ -31,7 +31,12 @@ Open http://127.0.0.1:8765/
 ## Start (production-ish single process)
 
 ```bash
-make install
+make serve
+```
+
+That builds `frontend/dist` and runs `bluos-dashboard` (the backend console entrypoint) with `BSD_STATIC_DIR` pointing at it. Open http://127.0.0.1:8780/. It listens on `SERVE_PORT` (default `8780`), not `BSD_PORT`, so it can stay up while `make run` uses `8000` and `8765`. Change it with `make serve SERVE_PORT=9000`. `BSD_HOST` and every other `BSD_` setting still apply. The manual equivalent:
+
+```bash
 make build
 cd backend && BSD_STATIC_DIR=../frontend/dist .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -52,10 +57,11 @@ Environment variables: [CONFIGURATION.md](CONFIGURATION.md). Network exposure no
 
 | Service | URL |
 |---------|-----|
-| UI (Vite) | http://127.0.0.1:8765/ |
-| API | http://127.0.0.1:8000/ |
+| UI (Vite, `make run`) | http://127.0.0.1:8765/ |
+| API (`make run`) | http://127.0.0.1:8000/ |
+| UI and API (`make serve`) | http://127.0.0.1:8780/ |
 
-Vite proxies `/api` → the API. CORS defaults allow both `http://127.0.0.1:8765` and `http://localhost:8765`.
+Under `make run`, Vite proxies `/api` → the API. CORS defaults allow both `http://127.0.0.1:8765` and `http://localhost:8765`.
 
 ## Common failures
 
@@ -74,7 +80,8 @@ Vite proxies `/api` → the API. CORS defaults allow both `http://127.0.0.1:8765
 | Player still “online” after power-off | Hung TCP on a Status long-poll | Connect failures fail in `BSD_DEVICE_HTTP_TIMEOUT` (~3s). A stuck read can wait until `BSD_STATUS_LONG_POLL_SECONDS` + slack |
 | Bluetooth section missing | Model/probe reports unsupported | Normal for many CI zones and players without BT |
 | SSE reconnecting / stale UI | Proxy buffering, backend restart, or SSE backpressure | Check backend logs for `sse_drop_subscriber`; UI uses exponential reconnect, then after 8 failures shows **Offline**, keeps REST polling every 5s, and retries SSE every 60s until live again (empty fleet uses `BSD_EMPTY_FLEET_REDISCOVERY_SECONDS` cache — not a full discovery each poll) |
-| `make run` says port in use | Something already listens on the API/UI port | Stop that process, or `BSD_FORCE_FREE_PORTS=1 make run` |
+| `make run` fails with `address already in use` or `Port 8765 is in use` | Something already listens on the API/UI port | Stop that process (`lsof -nP -iTCP:8000 -sTCP:LISTEN`), or set a different `BSD_PORT` |
+| `bad interpreter` from a `backend/.venv/bin/` tool after moving the checkout | `backend/.venv` records its original path | `make distclean install` |
 | Every control returns `401` from a LAN bind, or logs show `insecure_bind` | `BSD_HOST` is not loopback and `BSD_API_TOKEN` is empty or mismatched | Set `BSD_API_TOKEN` and the matching `VITE_API_TOKEN` in `frontend/.env`; see [CONFIGURATION.md](CONFIGURATION.md) **Network exposure** |
 | `401 unauthorized` from API | `BSD_API_TOKEN` set without matching UI token | Put the same value in `frontend/.env` as `VITE_API_TOKEN` (Vite does not read repo-root `.env`) |
 | Vite `ECONNREFUSED` / proxy errors to `:8000` | UI started before API was healthy | Use `make run` (waits for healthz); or start API first and confirm healthz before `npm run dev` |
@@ -94,6 +101,8 @@ Variable names and defaults: [CONFIGURATION.md](CONFIGURATION.md).
 ## Process
 
 Run one process. More than one uvicorn worker splits the fleet across processes that do not share discovery or the long-polls.
+
+On SIGINT or SIGTERM the app ends every open SSE stream first, so an open browser tab does not hold up a stop or a `--reload` restart. Browsers reconnect when the server is back.
 
 A crash should start that same process again. Example:
 

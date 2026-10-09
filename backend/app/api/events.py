@@ -29,6 +29,8 @@ async def events(request: Request, state: StateDep) -> StreamingResponse:
                         queue.get_nowait()
                     except asyncio.QueueEmpty:
                         break
+                if state.events.closed:
+                    return
                 initial = json.dumps(
                     {
                         "type": "fleet",
@@ -42,11 +44,15 @@ async def events(request: Request, state: StateDep) -> StreamingResponse:
                     break
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=keepalive)
-                    yield f"data: {payload}\n\n"
                 except asyncio.TimeoutError:
                     if await request.is_disconnected():
                         break
                     yield ": keepalive\n\n"
+                    continue
+                if payload is None:
+                    # The server is stopping. Ending the response lets it exit.
+                    break
+                yield f"data: {payload}\n\n"
         finally:
             await state.events.unsubscribe(queue)
 

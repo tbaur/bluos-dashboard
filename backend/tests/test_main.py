@@ -152,24 +152,8 @@ async def test_events_initial_fleet_snapshot(
         if message["type"] == "http.response.body" and message.get("body"):
             saw_body.set()
 
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": "GET",
-        "path": "/api/v1/events",
-        "raw_path": b"/api/v1/events",
-        "root_path": "",
-        "scheme": "http",
-        "query_string": b"",
-        "headers": [(b"host", b"test")],
-        "client": ("127.0.0.1", 50000),
-        "server": ("test", 80),
-        "state": {},
-    }
-
     try:
-        await asyncio.wait_for(app(scope, receive, send), timeout=2.0)
+        await asyncio.wait_for(app(_events_scope(), receive, send), timeout=2.0)
     finally:
         await client.aclose()
 
@@ -185,3 +169,51 @@ async def test_events_initial_fleet_snapshot(
     assert "data:" in body
     assert '"type": "fleet"' in body or '"type":"fleet"' in body
     assert "player-kitchen" in body
+
+
+@pytest.mark.asyncio
+async def test_events_stream_ends_when_the_bus_closes(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A browser that never disconnects must not hold the server open on stop."""
+    import asyncio
+
+    app, client, _poller = await _seeded_app(settings, monkeypatch)
+    events: EventBus = app.state.app_state.events
+    never = asyncio.Event()
+    sent: list[dict] = []
+
+    async def receive() -> dict:
+        await never.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+        if message["type"] == "http.response.body" and message.get("body"):
+            events.close()
+
+    try:
+        await asyncio.wait_for(app(_events_scope(), receive, send), timeout=2.0)
+    finally:
+        await client.aclose()
+
+    assert sent[-1]["type"] == "http.response.body"
+    assert sent[-1].get("more_body") is False
+
+
+def _events_scope() -> dict:
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "path": "/api/v1/events",
+        "raw_path": b"/api/v1/events",
+        "root_path": "",
+        "scheme": "http",
+        "query_string": b"",
+        "headers": [(b"host", b"test")],
+        "client": ("127.0.0.1", 50000),
+        "server": ("test", 80),
+        "state": {},
+    }

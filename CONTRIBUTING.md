@@ -79,40 +79,54 @@ cd bluos-dashboard
 make install
 ```
 
-That creates `backend/.venv`, installs the backend with dev extras, and runs `npm ci` in `frontend/`. Copy [.env.example](.env.example) to `.env` in the repo root when you need non-default settings. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and [docs/RUNBOOK.md](docs/RUNBOOK.md).
+That creates `backend/.venv`, installs the backend with dev extras, and runs `npm ci` in `frontend/`. It reinstalls a side only when its manifest (`backend/pyproject.toml`, `frontend/package-lock.json`) changes, and every target below runs it first, so you rarely need to call it yourself. Copy [.env.example](.env.example) to `.env` in the repo root when you need non-default settings. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
-### Run locally
+### Make targets
 
-```bash
-make run
-```
+Run `make` with no target to list them.
 
-Opens the UI at http://127.0.0.1:8765/ after the API is healthy on `:8000`. For a production UI bundle: `make build` (writes `frontend/dist`). See [docs/RUNBOOK.md](docs/RUNBOOK.md).
+| Target | What it does |
+|--------|--------------|
+| `make install` | Backend venv and frontend packages |
+| `make run` | Development: API with reload, then the Vite UI at http://127.0.0.1:8765/ once the API is healthy |
+| `make build` | Production UI bundle in `frontend/dist` (the backend has no build step) |
+| `make serve` | `build`, then one process serves the UI and API at http://127.0.0.1:8780/ (`SERVE_PORT`), so it can stay up while you use `make run` |
+| `make lint` | Ruff and mypy, ESLint and `tsc` |
+| `make test` | pytest and Vitest with the CI coverage gates |
+| `make check` | `lint`, `test`, and `build`: everything CI runs except the dependency audits |
+| `make clean` | Remove build output, coverage, and caches |
+| `make distclean` | `clean`, plus `backend/.venv` and `frontend/node_modules` |
+
+If you move or rename the checkout, run `make distclean install`. A venv records its absolute path.
 
 ### Running checks
 
 ```bash
+make check
+```
+
+To run one side or one tool, use the commands that the targets wrap:
+
+```bash
 # Backend
 cd backend
-ruff check app tests
-mypy app
-pytest --cov=app --cov-report=term-missing
-coverage report --fail-under=90  # CI aggregate gate (total ≥90%; individual modules may be lower)
-pip-audit --progress-spinner off
+.venv/bin/ruff check app tests
+.venv/bin/mypy app
+.venv/bin/pytest --cov=app && .venv/bin/coverage report  # gate: fail_under in pyproject.toml
+.venv/bin/pip-audit --progress-spinner off                # CI only
 # Optional: pip install -e ".[dev]" -c requirements.lock (lock is a 3.14 freeze snapshot)
 
 # Frontend
 cd frontend
 npm run lint
 npm run typecheck
-npm test
-npx vitest run --coverage  # CI gate: see thresholds in vite.config.ts
-npm audit --omit=dev --audit-level=moderate  # CI gate (blocking)
-npm audit --audit-level=moderate             # CI reports the dev tree, non-blocking
+npm run test:coverage                         # gate: thresholds in vite.config.ts
+npm audit --omit=dev --audit-level=moderate   # CI gate (blocking)
+npm audit --audit-level=moderate              # CI reports the dev tree, non-blocking
 npm run build
 ```
 
-Coverage thresholds are defined next to the code they guard, so they stay correct as they are raised: `coverage report --fail-under=90` for the backend, and the `thresholds` block in [frontend/vite.config.ts](frontend/vite.config.ts) for the frontend (global lines/statements/functions/branches, plus a per-file floor on `src/store/fleetStore.ts`, which holds the optimistic-update logic).
+Coverage thresholds are defined next to the code they guard, so they stay correct as they are raised: `fail_under` in [backend/pyproject.toml](backend/pyproject.toml) for the backend, and the `thresholds` block in [frontend/vite.config.ts](frontend/vite.config.ts) for the frontend (global lines/statements/functions/branches, plus a per-file floor on `src/store/fleetStore.ts`, which holds the optimistic-update logic).
 
 [Tests](.github/workflows/test.yml) runs everything above on pull requests, as
 `Backend (Python 3.10 | 3.13 | 3.14)` and `Frontend`. It also declares a
@@ -124,8 +138,7 @@ Coverage thresholds are defined next to the code they guard, so they stay correc
 
 ```
 bluos-dashboard/
-├── Makefile              # make install / build / run
-├── scripts/              # install, build, run implementations
+├── Makefile              # developer tasks; `make` lists them
 ├── backend/app/          # FastAPI app (discovery, BluOS client, API, poller)
 ├── backend/tests/        # Backend tests (≥90% coverage required in CI)
 ├── frontend/src/         # React UI (Vite on :8765)

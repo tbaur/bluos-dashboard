@@ -40,7 +40,7 @@ There is **no interactive login**. Players on the LAN have no authentication of 
 
 Details and variable names: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-Local development: `make run` (UI `:8765`, API `:8000`). Ops and health endpoints: [docs/RUNBOOK.md](docs/RUNBOOK.md).
+Local development: `make run` (UI `:8765`, API `:8000`). Everyday single process: `make serve` (UI and API on `:8780`). Ops and health endpoints: [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## Best Practices for Users
 
