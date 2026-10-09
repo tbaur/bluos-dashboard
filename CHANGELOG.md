@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.1](https://github.com/tbaur/bluos-dashboard/compare/v1.2.0...v1.2.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* stop cleanly with open tabs, tighten auth, and tidy the repo ([#105](https://github.com/tbaur/bluos-dashboard/issues/105)) ([0d851e5](https://github.com/tbaur/bluos-dashboard/commit/0d851e58b674c895864a8336255809dc2595c68d))
+
 ## [1.2.0](https://github.com/tbaur/bluos-dashboard/compare/v1.1.2...v1.2.0) (2026-10-09)
 
 
