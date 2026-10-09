@@ -30,6 +30,8 @@ interface AdvancedPanelProps {
   inputs: AudioInput[];
   setInputs: (inputs: AudioInput[]) => void;
   presets: Preset[];
+  /** Inputs and presets load when Advanced first opens; until then their counts are unknown. */
+  loaded: boolean;
   bluetooth: BluetoothView;
   applyBluetooth: (value: BluetoothResponse) => void;
   upgrade: UpgradeStatus | null;
@@ -38,7 +40,7 @@ interface AdvancedPanelProps {
 }
 
 export function AdvancedPanel(props: AdvancedPanelProps) {
-  const { device, open, onOpenChange, queue, inputs, presets, bluetooth, onControl } = props;
+  const { device, open, onOpenChange, queue, inputs, presets, loaded, bluetooth, onControl } = props;
   return (
     <details
       className="panel panel-collapse"
@@ -48,8 +50,7 @@ export function AdvancedPanel(props: AdvancedPanelProps) {
         <h2>Advanced</h2>
         <span className="card-meta">
           queue {queue?.count ?? 0}
-          {META_SEP}inputs {inputs.length}
-          {META_SEP}presets {presets.length}
+          {loaded ? `${META_SEP}inputs ${inputs.length}${META_SEP}presets ${presets.length}` : null}
         </span>
       </summary>
 

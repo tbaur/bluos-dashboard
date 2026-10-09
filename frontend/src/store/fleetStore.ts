@@ -138,13 +138,16 @@ function setEach(
 
 /** Freeze transport/now-playing; mute and volume have their own holds. */
 function applyPlaybackHold(incoming: PlayerStatus, previous: PlayerStatus): PlayerStatus {
-  const keepMeta = !hasTrackMeta(incoming) && hasTrackMeta(previous);
+  // After Stop an empty track is the truth, not a skip in progress. A stopped
+  // player sends no more updates, so a kept title would never be corrected.
+  const stopped = previous.state === 'stop';
+  const keepMeta = !stopped && !hasTrackMeta(incoming) && hasTrackMeta(previous);
   const keepSecs = keepMeta || (hasTrackMeta(incoming) && isSameTrack(incoming, previous));
   const meta = keepMeta ? previous : incoming;
   // A skip often arrives with an empty image for a moment. Keep the last cover
   // then. A new track that already has its own image must replace it, or the
   // hold eats the only event and the old cover stays up.
-  const image = incoming.image || previous.image;
+  const image = stopped ? incoming.image : incoming.image || previous.image;
   return {
     ...incoming,
     state: previous.state,
@@ -155,7 +158,7 @@ function applyPlaybackHold(incoming: PlayerStatus, previous: PlayerStatus): Play
     artist: meta.artist,
     album: meta.album,
     image,
-    totlen: keepMeta || incoming.totlen <= 0 ? previous.totlen : incoming.totlen,
+    totlen: keepMeta || (!stopped && incoming.totlen <= 0) ? previous.totlen : incoming.totlen,
     quality: meta.quality,
     stream_format: meta.stream_format,
     service: meta.service,

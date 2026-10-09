@@ -247,6 +247,21 @@ describe('PlayerDetailPage maintenance', () => {
     expect(screen.getByRole('button', { name: 'Move First up' })).toBeEnabled();
   });
 
+  it('counts inputs and presets only after Advanced has loaded them', async () => {
+    getInputs.mockResolvedValue([
+      { name: 'Analog', type: 'analog', id: 'analog-1', selected: false },
+    ]);
+    const { container } = renderPlayer();
+    const summary = () => container.querySelector('summary .card-meta')?.textContent;
+    await waitFor(() => expect(getQueue).toHaveBeenCalled());
+    expect(summary()).toBe('queue 0');
+
+    const details = container.querySelector('details')!;
+    details.open = true;
+    fireEvent(details, new Event('toggle'));
+    await waitFor(() => expect(summary()).toBe('queue 0 / inputs 1 / presets 0'));
+  });
+
   it('shows poller health on the device panel', async () => {
     useFleetStore.setState({
       devices: [{ ...sample, consecutive_failures: 2, last_seen: Date.now() / 1000 - 12 }],
