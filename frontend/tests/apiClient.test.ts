@@ -116,6 +116,91 @@ describe('api client', () => {
     });
   });
 
+  const id = 'player-1';
+  it.each([
+    ['listDevices', () => api.listDevices(), 'GET', '/devices'],
+    ['refreshDevices', () => api.refreshDevices(), 'POST', '/devices/refresh'],
+    ['getDevice', () => api.getDevice(id), 'GET', `/devices/${id}`],
+    ['play', () => api.play(id), 'POST', `/devices/${id}/play`],
+    ['pause', () => api.pause(id), 'POST', `/devices/${id}/pause`],
+    ['stop', () => api.stop(id), 'POST', `/devices/${id}/stop`],
+    ['skip', () => api.skip(id), 'POST', `/devices/${id}/skip`],
+    ['back', () => api.back(id), 'POST', `/devices/${id}/back`],
+    ['seek', () => api.seek(id, 42), 'POST', `/devices/${id}/seek`, { seconds: 42 }],
+    ['setShuffle', () => api.setShuffle(id, 1), 'POST', `/devices/${id}/shuffle`, { state: 1 }],
+    ['setRepeat', () => api.setRepeat(id, 2), 'POST', `/devices/${id}/repeat`, { state: 2 }],
+    ['adjustVolume', () => api.adjustVolume(id, -2), 'POST', `/devices/${id}/volume/adjust`, { delta: -2 }],
+    ['diagnose', () => api.diagnose(id), 'GET', `/devices/${id}/diagnose`],
+    ['getSettings', () => api.getSettings(id, 'audio'), 'GET', `/devices/${id}/settings/audio`],
+    ['getUpgrade', () => api.getUpgrade(id), 'GET', `/devices/${id}/upgrade`],
+    ['fleetFirmware', () => api.fleetFirmware(), 'GET', '/fleet/firmware'],
+    ['fleetUpgrades', () => api.fleetUpgrades(), 'GET', '/fleet/upgrades'],
+    ['getFleetHealth', () => api.getFleetHealth(), 'GET', '/fleet/health'],
+    ['reboot', () => api.reboot(id), 'POST', `/devices/${id}/reboot`],
+    ['setVolume', () => api.setVolume(id, 30), 'POST', `/devices/${id}/volume`, { level: 30 }],
+    ['setFleetVolume', () => api.setFleetVolume(30), 'POST', '/fleet/volume', { level: 30 }],
+    [
+      'setFleetVolume scoped',
+      () => api.setFleetVolume(30, [id]),
+      'POST',
+      '/fleet/volume',
+      { level: 30, device_ids: [id] },
+    ],
+    ['fleetMute', () => api.fleetMute(true), 'POST', '/fleet/mute', { mute: true }],
+    ['fleetPause', () => api.fleetPause(), 'POST', '/fleet/pause'],
+    ['fleetStop', () => api.fleetStop(), 'POST', '/fleet/stop'],
+    ['fleetReboot', () => api.fleetReboot(), 'POST', '/fleet/reboot'],
+    ['setMute', () => api.setMute(id, false), 'POST', `/devices/${id}/mute`, { mute: false }],
+    ['getQueue', () => api.getQueue(id), 'GET', `/devices/${id}/queue`],
+    ['clearQueue', () => api.clearQueue(id), 'POST', `/devices/${id}/queue/clear`],
+    ['getInputs', () => api.getInputs(id), 'GET', `/devices/${id}/inputs`],
+    ['setInput', () => api.setInput(id, 'spdif-1'), 'POST', `/devices/${id}/input`, { input: 'spdif-1' }],
+    ['getBluetooth', () => api.getBluetooth(id), 'GET', `/devices/${id}/bluetooth`],
+    ['setBluetooth', () => api.setBluetooth(id, 3), 'POST', `/devices/${id}/bluetooth`, { mode: 3 }],
+    ['getPresets', () => api.getPresets(id), 'GET', `/devices/${id}/presets`],
+    ['playPreset', () => api.playPreset(id, 4), 'POST', `/devices/${id}/presets/4/play`],
+    ['getSync', () => api.getSync(), 'GET', '/sync'],
+    [
+      'syncAdd',
+      () => api.syncAdd('lead', id),
+      'POST',
+      '/sync/add',
+      { master_id: 'lead', slave_id: id },
+    ],
+    ['syncEnable', () => api.syncEnable('lead'), 'POST', '/sync/enable', { primary_id: 'lead' }],
+    [
+      'syncRemove',
+      () => api.syncRemove('lead', id),
+      'POST',
+      '/sync/remove',
+      { master_id: 'lead', slave_id: id },
+    ],
+    ['syncBreak', () => api.syncBreak(), 'POST', '/sync/break'],
+    [
+      'moveQueueItem',
+      () => api.moveQueueItem(id, 1, 3),
+      'POST',
+      `/devices/${id}/queue/move`,
+      { from_index: 1, to_index: 3 },
+    ],
+  ] as const)('%s calls %s %s', async (_name, call, method, path, body?: object) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({}),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await call();
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`/api/v1${path}`);
+    expect(init.method ?? 'GET').toBe(method);
+    expect(new Headers(init.headers).get('X-BSD-Request')).toBe('1');
+    expect(init.body === undefined ? undefined : JSON.parse(String(init.body))).toEqual(body);
+  });
+
   it('posts settings writes without a client-supplied path', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

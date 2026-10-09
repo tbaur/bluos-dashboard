@@ -9,9 +9,11 @@ import type {
   FleetFirmwareResponse,
   FleetHealthResponse,
   FleetUpgradeResponse,
+  FleetVolumeResponse,
   PlayerStatus,
   Preset,
   QueueResponse,
+  SyncEnableResponse,
   SyncState,
   UpgradeStatus,
 } from './types';
@@ -145,49 +147,16 @@ export const api = {
     request<void>(`/devices/${id}/reboot`, { method: 'POST' }),
   setVolume: (id: string, level: number) =>
     request<void>(`/devices/${id}/volume`, { method: 'POST', json: { level } }),
-  setFleetVolume: (level: number, deviceIds?: string[]) => {
-    const body =
-      deviceIds === undefined
-        ? { level }
-        : { level, device_ids: deviceIds };
-    return request<{
-      level: number;
-      succeeded: number;
-      failed: number;
-      results: { device_id: string; name: string; ok: boolean }[];
-    }>('/fleet/volume', {
+  setFleetVolume: (level: number, deviceIds?: string[]) =>
+    request<FleetVolumeResponse>('/fleet/volume', {
       method: 'POST',
-      json: body,
-    });
-  },
+      json: deviceIds === undefined ? { level } : { level, device_ids: deviceIds },
+    }),
   fleetMute: (mute: boolean) =>
-    request<{
-      action: string;
-      succeeded: number;
-      failed: number;
-      results: { device_id: string; name: string; ok: boolean }[];
-    }>('/fleet/mute', { method: 'POST', json: { mute } }),
-  fleetPause: () =>
-    request<{
-      action: string;
-      succeeded: number;
-      failed: number;
-      results: { device_id: string; name: string; ok: boolean }[];
-    }>('/fleet/pause', { method: 'POST' }),
-  fleetStop: () =>
-    request<{
-      action: string;
-      succeeded: number;
-      failed: number;
-      results: { device_id: string; name: string; ok: boolean }[];
-    }>('/fleet/stop', { method: 'POST' }),
-  fleetReboot: () =>
-    request<{
-      action: string;
-      succeeded: number;
-      failed: number;
-      results: { device_id: string; name: string; ok: boolean }[];
-    }>('/fleet/reboot', { method: 'POST' }),
+    request<FleetActionResponse>('/fleet/mute', { method: 'POST', json: { mute } }),
+  fleetPause: () => request<FleetActionResponse>('/fleet/pause', { method: 'POST' }),
+  fleetStop: () => request<FleetActionResponse>('/fleet/stop', { method: 'POST' }),
+  fleetReboot: () => request<FleetActionResponse>('/fleet/reboot', { method: 'POST' }),
   setMute: (id: string, mute: boolean) =>
     request<void>(`/devices/${id}/mute`, { method: 'POST', json: { mute } }),
   getQueue: (id: string, init?: RequestInit) =>
@@ -213,13 +182,7 @@ export const api = {
       json: { master_id: masterId, slave_id: slaveId },
     }),
   syncEnable: (primaryId: string) =>
-    request<{
-      action: string;
-      primary_id: string;
-      succeeded: number;
-      failed: number;
-      results: { device_id: string; name: string; ok: boolean }[];
-    }>('/sync/enable', {
+    request<SyncEnableResponse>('/sync/enable', {
       method: 'POST',
       json: { primary_id: primaryId },
     }),

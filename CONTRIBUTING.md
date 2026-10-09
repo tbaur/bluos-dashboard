@@ -125,7 +125,7 @@ npm audit --audit-level=moderate              # CI reports the dev tree, non-blo
 npm run build
 ```
 
-Coverage thresholds are defined next to the code they guard, so they stay correct as they are raised: `fail_under` in [backend/pyproject.toml](backend/pyproject.toml) for the backend, and the `thresholds` block in [frontend/vite.config.ts](frontend/vite.config.ts) for the frontend (global lines/statements/functions/branches, plus a per-file floor on `src/store/fleetStore.ts`, which holds the optimistic-update logic).
+Coverage thresholds are defined next to the code they guard, so they stay correct as they are raised: `fail_under` in [backend/pyproject.toml](backend/pyproject.toml) for the backend, and the `thresholds` block in [frontend/vite.config.ts](frontend/vite.config.ts) for the frontend (global lines/statements/functions/branches, plus per-file floors on `src/store/fleetStore.ts`, which holds the optimistic-update logic, and `src/api/client.ts`, whose every method is pinned by a route table in `tests/apiClient.test.ts`).
 
 [Tests](.github/workflows/test.yml) runs the per-side make targets and the audits on pull requests, as
 `Backend (Python 3.10 | 3.13 | 3.14)` and `Frontend`. It also declares a

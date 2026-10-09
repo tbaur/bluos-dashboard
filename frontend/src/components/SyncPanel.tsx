@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { api } from '@/api/client';
 import type { PlayerStatus, SyncGroup, SyncState } from '@/api/types';
 import { deviceEndpoint } from '@/lib/endpoint';
-import { useFleetStore } from '@/store/fleetStore';
+import { GROUP_CHANGE_SYNC_HOLD_MS, useFleetStore } from '@/store/fleetStore';
 
 function isOnlinePrimary(primaryId: string, byId: Record<string, PlayerStatus>): boolean {
   return Boolean(byId[primaryId]);
@@ -152,7 +152,7 @@ export function SyncPanel() {
       groups: nextGroups,
       standalone_ids: state.devices.map((d) => d.id).filter((id) => !occupied.has(id)),
     });
-    holdSync(6000);
+    holdSync(GROUP_CHANGE_SYNC_HOLD_MS);
     patchDevice(primaryId, {
       sync_role: 'primary',
       slaves: Array.from(new Set([...(lead.slaves ?? []), deviceEndpoint(follower)])),
@@ -184,7 +184,7 @@ export function SyncPanel() {
       groups: nextGroups,
       standalone_ids: state.devices.map((d) => d.id).filter((id) => !occupied.has(id)),
     });
-    holdSync(6000);
+    holdSync(GROUP_CHANGE_SYNC_HOLD_MS);
   };
 
   const addFollower = (primaryId: string, slaveId: string, fromBuilder: boolean) => {
@@ -240,7 +240,7 @@ export function SyncPanel() {
         groups: [],
         standalone_ids: useFleetStore.getState().devices.map((d) => d.id),
       });
-      holdSync(6000);
+      holdSync(GROUP_CHANGE_SYNC_HOLD_MS);
       await reloadStatus();
       if (result.failed > 0) {
         useFleetStore.getState().setToast(

@@ -3,7 +3,7 @@ import type { PlayerStatus } from '@/api/types';
 import { HouseRemote } from '@/components/HouseRemote';
 import { VolumeNudgeButtons } from '@/components/VolumeNudgeButtons';
 import { partitionVolumeGroups } from '@/lib/deviceGroups';
-import { useFleetStore } from '@/store/fleetStore';
+import { DRAG_VOLUME_HOLD_MS, useFleetStore } from '@/store/fleetStore';
 
 const BLUESOUND_VOLUME_LEVELS = [20, 48, 60] as const;
 const CI_S2_VOLUME_LEVELS = [42, 50, 60, 70] as const;
@@ -74,7 +74,7 @@ function GroupVolumePanel({
     if (ids.length === 0) return;
     const generation = ++flushGeneration.current;
     setPending(true);
-    holdVolumes(ids, 5000);
+    holdVolumes(ids, DRAG_VOLUME_HOLD_MS);
     void setFleetVolume(level, ids).finally(() => {
       // Only the latest in-flight flush owns the Syncing… indicator.
       if (generation !== flushGeneration.current) return;
@@ -86,7 +86,7 @@ function GroupVolumePanel({
   const scheduleFlush = (level: number) => {
     latestLevel.current = level;
     setDragDraft(level);
-    holdVolumes(deviceIdsRef.current, 5000);
+    holdVolumes(deviceIdsRef.current, DRAG_VOLUME_HOLD_MS);
     if (commitTimer.current) window.clearTimeout(commitTimer.current);
     commitTimer.current = window.setTimeout(() => {
       commitTimer.current = undefined;
@@ -165,7 +165,7 @@ function GroupVolumePanel({
             setDragging(true);
             setDragDraft(fleetMedian);
             latestLevel.current = fleetMedian;
-            holdVolumes(deviceIdsRef.current, 5000);
+            holdVolumes(deviceIdsRef.current, DRAG_VOLUME_HOLD_MS);
           }}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}

@@ -10,7 +10,7 @@ import {
 } from '@/lib/endpoint';
 import { joinMeta } from '@/lib/meta';
 import { displaySyncRole } from '@/lib/syncGraph';
-import { useFleetStore } from '@/store/fleetStore';
+import { DRAG_VOLUME_HOLD_MS, useFleetStore } from '@/store/fleetStore';
 import { memo, useEffect, useRef, useState } from 'react';
 
 function isPlaying(state: string): boolean {
@@ -255,7 +255,7 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
           onPointerDown={() => {
             setDragging(true);
             setDragVolume(device.volume);
-            holdVolume(device.id, 5000);
+            holdVolume(device.id, DRAG_VOLUME_HOLD_MS);
           }}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
