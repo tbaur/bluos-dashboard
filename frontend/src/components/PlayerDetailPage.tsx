@@ -17,8 +17,17 @@ import { reorderQueue } from '@/lib/queue';
 import { displaySyncRole } from '@/lib/syncGraph';
 import { useFleetStore } from '@/store/fleetStore';
 
+/**
+ * One page instance per player. The router keeps the component mounted when
+ * only :id changes (back/forward), and every list, scrape and open panel here
+ * belongs to one player, so a new id starts from scratch.
+ */
 export function PlayerDetailPage() {
   const { id = '' } = useParams();
+  return <PlayerDetail key={id} id={id} />;
+}
+
+function PlayerDetail({ id }: { id: string }) {
   const device = useFleetStore((s) => s.devices.find((d) => d.id === id));
   const devices = useFleetStore((s) => s.devices);
   const sync = useFleetStore((s) => s.sync);
