@@ -1,2 +1,2 @@
-export const APP_VERSION = '1.2.3'; // x-release-please-version
+export const APP_VERSION = '1.2.4'; // x-release-please-version
 export const REPO_URL = 'https://github.com/tbaur/bluos-dashboard';
