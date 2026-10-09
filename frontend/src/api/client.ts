@@ -69,7 +69,8 @@ async function request<T>(
     body = JSON.stringify(init.json);
   }
   headers.set('X-BSD-Request', '1');
-  if (apiToken) {
+  // A caller-supplied token (the session form) wins over the built-in one.
+  if (apiToken && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${apiToken}`);
   }
   const rest = { ...(init ?? {}) } as RequestInit & { json?: unknown };
@@ -111,6 +112,12 @@ async function request<T>(
 }
 
 export const api = {
+  /** Trade an API token for the HttpOnly session cookie. */
+  openSession: (token: string) =>
+    request<void>('/session', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
   listDevices: () => request<DevicesResponse>('/devices'),
   refreshDevices: () =>
     request<DevicesResponse>('/devices/refresh', { method: 'POST' }),

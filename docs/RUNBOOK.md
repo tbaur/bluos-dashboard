@@ -83,6 +83,7 @@ Under `make run`, Vite proxies `/api` → the API. CORS defaults allow both `htt
 | `make run` fails with `address already in use` or `Port 8765 is in use` | Something already listens on the API/UI port | Stop that process (`lsof -nP -iTCP:8000 -sTCP:LISTEN`), or set a different `BSD_PORT` |
 | `bad interpreter` from a `backend/.venv/bin/` tool after moving the checkout | `backend/.venv` records its original path | `make distclean install` |
 | Every control returns `401` from a LAN bind, or logs show `insecure_bind` | `BSD_HOST` is not loopback and `BSD_API_TOKEN` is empty or mismatched | Set `BSD_API_TOKEN` and the matching `VITE_API_TOKEN` in `frontend/.env`; see [CONFIGURATION.md](CONFIGURATION.md) **Network exposure** |
+| Page says **Can’t reach the dashboard** | The UI loaded but `/api/v1` is not answering (API starting, restarting, or a proxy in front of it is down) | It retries every few seconds. Check `/api/v1/healthz` and the API logs. The token form appears only on a real `401` |
 | `401 unauthorized` from API | `BSD_API_TOKEN` set without matching UI token | Put the same value in `frontend/.env` as `VITE_API_TOKEN` (Vite does not read repo-root `.env`) |
 | Vite `ECONNREFUSED` / proxy errors to `:8000` | UI started before API was healthy | Use `make run` (waits for healthz); or start API first and confirm healthz before `npm run dev` |
 
