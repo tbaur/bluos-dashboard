@@ -20,6 +20,11 @@ from app.services.sync import build_sync_state
 
 logger = logging.getLogger(__name__)
 
+# A follower's /Status reports its lead's syncStat, so the follower's own
+# /SyncStatus can change (it joins a group) without that value moving. A read
+# taken just before the join settles would then be reused indefinitely.
+SYNC_RECHECK_SECONDS = 60.0
+
 
 class StatusPoller:
     def __init__(
@@ -44,6 +49,7 @@ class StatusPoller:
         self._next_due: dict[str, float] = {}
         self._status_etags: dict[str, str] = {}
         self._sync_stats: dict[str, str] = {}
+        self._sync_read_at: dict[str, float] = {}
         self._last_status_at: dict[str, float] = {}
         self.running = False
         self.last_poll_at: float | None = None
@@ -352,11 +358,15 @@ class StatusPoller:
     async def _load_player(self, device: PlayerStatus) -> PlayerSnapshot:
         etag = self._status_etags.get(device.id)
         wait = self.settings.status_long_poll_seconds if etag else None
+        sync_stat = self._sync_stats.get(device.id)
+        read_at = self._sync_read_at.get(device.id, 0.0)
+        if time.monotonic() - read_at >= SYNC_RECHECK_SECONDS:
+            sync_stat = None  # no matching tag, so /SyncStatus is read again
         return await self.client.load_player(
             device.endpoint,
             device_id=device.id,
             status_etag=etag,
-            sync_stat=self._sync_stats.get(device.id),
+            sync_stat=sync_stat,
             previous=device if etag else None,
             long_poll_seconds=wait,
         )
@@ -440,10 +450,13 @@ class StatusPoller:
             self._status_etags[device_id] = snap.status_etag
         if snap.sync_stat:
             self._sync_stats[device_id] = snap.sync_stat
+        if snap.sync_read:
+            self._sync_read_at[device_id] = time.monotonic()
 
     def _forget_tags(self, device_id: str) -> None:
         self._status_etags.pop(device_id, None)
         self._sync_stats.pop(device_id, None)
+        self._sync_read_at.pop(device_id, None)
 
     def _forget_device(self, device_id: str) -> None:
         inflight = self._in_flight.pop(device_id, None)
