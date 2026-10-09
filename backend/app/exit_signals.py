@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import signal
 import threading
 from collections.abc import Callable
 from types import FrameType
+
+logger = logging.getLogger(__name__)
 
 SignalHandler = Callable[[int, FrameType | None], object]
 
@@ -42,7 +45,11 @@ def on_exit_signal(callback: Callable[[], object]) -> Callable[[], None]:
 
 def _chain(callback: Callable[[], object], handler: SignalHandler) -> SignalHandler:
     def chained(signum: int, frame: FrameType | None) -> None:
-        callback()
+        # The server's own handler must run even if ours fails, or Ctrl-C does nothing.
+        try:
+            callback()
+        except Exception:
+            logger.exception("exit_signal_callback_failed signal=%s", signum)
         handler(signum, frame)
 
     return chained

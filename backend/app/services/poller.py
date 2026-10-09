@@ -47,6 +47,7 @@ class StatusPoller:
         self._in_flight: dict[str, asyncio.Task[PlayerSnapshot]] = {}
         self._refreshes: dict[str, asyncio.Task[PlayerStatus | None]] = {}
         self._confirms: dict[str, asyncio.Task[PlayerStatus | None]] = {}
+        self._confirm_due: dict[str, float] = {}
         self._control_holdoff_until: dict[str, float] = {}
         self._stop = asyncio.Event()
         self._failures: dict[str, int] = {}
@@ -170,15 +171,31 @@ class StatusPoller:
         self._start_once(self._refreshes, device_id, self.refresh_one(device_id), "refresh")
 
     def _confirm_sync_later(self, device_id: str) -> None:
-        """Read a player again once a sync change has settled on it."""
+        """Read a player again once its latest sync change has settled.
 
-        async def confirm() -> PlayerStatus | None:
-            await self._sleep(SYNC_SETTLE_SECONDS)
-            if self._stop.is_set():
-                return None
-            return await self.refresh_one(device_id)
+        Each change pushes the read back, so it follows the last change rather
+        than the first. One task per player does the waiting and the read.
+        """
+        self._confirm_due[device_id] = time.monotonic() + SYNC_SETTLE_SECONDS
+        self._start_once(
+            self._confirms, device_id, self._confirm_when_settled(device_id), "sync-confirm"
+        )
 
-        self._start_once(self._confirms, device_id, confirm(), "sync-confirm")
+    async def _confirm_when_settled(self, device_id: str) -> PlayerStatus | None:
+        result: PlayerStatus | None = None
+        # A change seen by the read itself sets a new due time, so loop until none is left.
+        while (due := self._confirm_due.get(device_id)) is not None:
+            remaining = due - time.monotonic()
+            if remaining > 0:
+                await self._sleep(remaining)
+                if self._stop.is_set():
+                    return result
+                continue
+            del self._confirm_due[device_id]
+            # Same as a control: free the held long-poll before reading the player.
+            await self.interrupt([device_id])
+            result = await self.refresh_one(device_id)
+        return result
 
     def _start_once(
         self,
@@ -496,6 +513,7 @@ class StatusPoller:
         if inflight is not None and not inflight.done():
             inflight.cancel()
         self._forget_tags(device_id)
+        self._confirm_due.pop(device_id, None)
         self._last_status_at.pop(device_id, None)
         self._control_holdoff_until.pop(device_id, None)
         self._failures.pop(device_id, None)
@@ -511,6 +529,7 @@ class StatusPoller:
         tasks = [*self._refreshes.values(), *self._confirms.values()]
         self._refreshes.clear()
         self._confirms.clear()
+        self._confirm_due.clear()
         await _cancel_all(tasks)
 
     async def _wait_until_due(self, device_id: str) -> None:
