@@ -102,6 +102,7 @@ export function usePlayerScrapes(id: string) {
 export function useAdvancedDetails(id: string, open: boolean, reportError: ReportError) {
   const [inputs, setInputs] = useState<AudioInput[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [bluetooth, setBluetooth] = useState<BluetoothView>({ supported: false, mode: '' });
 
   useEffect(() => {
@@ -128,6 +129,7 @@ export function useAdvancedDetails(id: string, open: boolean, reportError: Repor
         setBluetooth((current) => ({ ...current, supported: false }));
         failures.push('bluetooth');
       }
+      if (!ac.signal.aborted) setLoaded(true);
       if (!ac.signal.aborted && failures.length) {
         reportError(`Failed to load: ${failures.join(', ')}`);
       }
@@ -139,7 +141,7 @@ export function useAdvancedDetails(id: string, open: boolean, reportError: Repor
     (value: BluetoothResponse) => setBluetooth(bluetoothView(value)),
     [],
   );
-  return { inputs, setInputs, presets, bluetooth, applyBluetooth };
+  return { inputs, setInputs, presets, loaded, bluetooth, applyBluetooth };
 }
 
 /** Paint the slider at once, and send the newest level after a short pause. */
