@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = "INFO"
     cors_origins: str = "http://127.0.0.1:8765,http://localhost:8765"
-    # When non-empty, require Bearer / X-API-Token (or ?token= for EventSource).
+    # When non-empty, require Bearer / X-API-Token or the session cookie.
     api_token: str = ""
     # Comma-separated client IPs allowed to supply X-Forwarded-For for API rate limits.
     trusted_proxies: str = ""

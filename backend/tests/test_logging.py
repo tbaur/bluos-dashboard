@@ -65,3 +65,22 @@ def test_configure_logging_sets_json_handler() -> None:
     root = logging.getLogger()
     assert root.level == logging.DEBUG
     assert any(isinstance(h.formatter, JsonFormatter) for h in root.handlers)
+
+
+def test_get_request_id_helper() -> None:
+    from app.api.errors import get_request_id
+    from app.logging import request_id_var
+
+    class Req:
+        state = type("S", (), {"request_id": "from-state"})()
+
+    assert get_request_id(Req()) == "from-state"  # type: ignore[arg-type]
+    token = request_id_var.set("from-ctx")
+    try:
+
+        class Bare:
+            state = type("S", (), {})()
+
+        assert get_request_id(Bare()) == "from-ctx"  # type: ignore[arg-type]
+    finally:
+        request_id_var.reset(token)
