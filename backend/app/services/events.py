@@ -41,10 +41,12 @@ class EventBus:
         """
         queue: EventQueue = asyncio.Queue(maxsize=self._max_queue_size)
         async with self._lock:
-            self._subscribers.add(queue)
             if self._closed:
                 return queue, None
-            return queue, _encode(event_type, snapshot())
+            # Encode first: if the snapshot raises, no queue is left subscribed.
+            payload = _encode(event_type, snapshot())
+            self._subscribers.add(queue)
+            return queue, payload
 
     @property
     def subscriber_count(self) -> int:

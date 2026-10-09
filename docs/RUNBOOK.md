@@ -6,7 +6,7 @@
 make run
 ```
 
-That installs dependencies if needed, starts the API with reload, waits for `GET /api/v1/healthz`, then starts the UI (so Vite never proxies to a dead API). Uvicorn or Vite exits with an error if its port is already in use. Ctrl-C stops both.
+That installs dependencies if needed, starts the API with reload, waits for `GET /api/v1/healthz`, then starts the UI (so Vite never proxies to a dead API). It checks the API and UI ports first and stops with a message if either is taken, so an old API cannot answer in place of the new one. The UI waits up to `BSD_DISCOVERY_TIMEOUT` plus 30 seconds for the API. Ctrl-C stops both.
 
 The API bind comes from `BSD_HOST` / `BSD_PORT`, resolved by the backend's own settings loader: environment first, then the repo-root `.env`, else `127.0.0.1:8000`. The Vite dev proxy follows the port. The UI stays on `127.0.0.1:8765`.
 
@@ -80,7 +80,7 @@ Under `make run`, Vite proxies `/api` → the API. CORS defaults allow both `htt
 | Player still “online” after power-off | Hung TCP on a Status long-poll | Connect failures fail in `BSD_DEVICE_HTTP_TIMEOUT` (~3s). A stuck read can wait until `BSD_STATUS_LONG_POLL_SECONDS` + slack |
 | Bluetooth section missing | Model/probe reports unsupported | Normal for many CI zones and players without BT |
 | SSE reconnecting / stale UI | Proxy buffering, backend restart, or SSE backpressure | Check backend logs for `sse_drop_subscriber`; UI uses exponential reconnect, then after 8 failures shows **Offline**, keeps REST polling every 5s, and retries SSE every 60s until live again (empty fleet uses `BSD_EMPTY_FLEET_REDISCOVERY_SECONDS` cache — not a full discovery each poll) |
-| `make run` fails with `address already in use` or `Port 8765 is in use` | Something already listens on the API/UI port | Stop that process (`lsof -nP -iTCP:8000 -sTCP:LISTEN`), or set a different `BSD_PORT` |
+| `make run` says `Port … is already in use` | Something already listens on the API/UI port (often an earlier `make run`) | Stop that process (`lsof -nP -iTCP:8000 -sTCP:LISTEN`), or set a different `BSD_PORT` |
 | `bad interpreter` from a `backend/.venv/bin/` tool after moving the checkout | `backend/.venv` records its original path | `make distclean install` |
 | Every control returns `401` from a LAN bind, or logs show `insecure_bind` | `BSD_HOST` is not loopback and `BSD_API_TOKEN` is empty or mismatched | Set `BSD_API_TOKEN` and the matching `VITE_API_TOKEN` in `frontend/.env`; see [CONFIGURATION.md](CONFIGURATION.md) **Network exposure** |
 | Page says **Can’t reach the dashboard** | The UI loaded but `/api/v1` is not answering (API starting, restarting, or a proxy in front of it is down) | It retries every few seconds. Check `/api/v1/healthz` and the API logs. The token form appears only on a real `401` |

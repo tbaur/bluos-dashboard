@@ -42,6 +42,18 @@ async def test_subscribe_with_snapshot_sees_only_newer_events() -> None:
 
 
 @pytest.mark.asyncio
+async def test_failed_snapshot_leaves_no_subscriber_behind() -> None:
+    bus = EventBus()
+
+    def broken() -> dict[str, int]:
+        raise RuntimeError("snapshot failed")
+
+    with pytest.raises(RuntimeError):
+        await bus.subscribe_with_snapshot("fleet", broken)
+    assert bus.subscriber_count == 0
+
+
+@pytest.mark.asyncio
 async def test_subscribe_with_snapshot_after_close_has_no_snapshot() -> None:
     bus = EventBus()
     bus.close()

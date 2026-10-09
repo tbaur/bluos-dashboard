@@ -61,6 +61,10 @@ def test_session_cookie_is_derived_and_needs_the_request_header_on_post() -> Non
     assert _auth(_cookie(COOKIE)) is True
     assert _auth(_cookie(COOKIE), method="POST") is False
     assert _auth(_cookie(COOKIE), (b"x-bsd-request", b"1"), method="POST") is True
+    # Every method with side effects needs the header, not only POST.
+    for method in ("PUT", "PATCH", "DELETE"):
+        assert _auth(_cookie(COOKIE), method=method) is False
+    assert _auth(_cookie(COOKIE), method="HEAD") is True
     # The raw token is not a valid cookie.
     assert _auth(_cookie(TOKEN)) is False
 

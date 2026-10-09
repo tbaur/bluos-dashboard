@@ -45,6 +45,8 @@ _SECURITY_HEADERS = {
 # Cheap in-memory GETs (/devices, /sync) overlap on UI mount / Strict Mode;
 # 429ing them surfaces "Too many requests" while an earlier load still succeeds.
 _EXPENSIVE_GET_PATHS = frozenset({"/api/v1/fleet/upgrades"})
+# Methods a cookie may use without the X-BSD-Request header (no side effects).
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _AUTH_EXEMPT_PATHS = frozenset(
     {
         "/api/v1/healthz",
@@ -203,7 +205,7 @@ def _authorized(scope: Scope, token: bytes, session_cookie: bytes) -> bool:
     cookie = _cookie_value(scope, SESSION_COOKIE.encode("ascii"))
     if cookie is not None and hmac.compare_digest(cookie, session_cookie):
         # A foreign site can send the cookie. It cannot set this header.
-        if scope.get("method") == "POST":
+        if scope.get("method") not in _SAFE_METHODS:
             return _header_raw(scope, b"x-bsd-request") == b"1"
         return True
     return False
