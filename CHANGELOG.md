@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.3](https://github.com/tbaur/bluos-dashboard/compare/v1.2.2...v1.2.3) (2026-10-09)
+
+
+### Bug Fixes
+
+* show Idle after Stop all instead of the last track ([#109](https://github.com/tbaur/bluos-dashboard/issues/109)) ([46aef17](https://github.com/tbaur/bluos-dashboard/commit/46aef1754e2facb68659de2c5a302008a3664f1d))
+
 ## [1.2.2](https://github.com/tbaur/bluos-dashboard/compare/v1.2.1...v1.2.2) (2026-10-09)
 
 
