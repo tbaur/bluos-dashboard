@@ -670,6 +670,54 @@ async def test_stop_cancels_refreshes_in_flight(
 
 
 @pytest.mark.asyncio
+async def test_syncstat_change_reads_the_player_again_once_settled(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A player reports a new syncStat before its /SyncStatus shows the new group."""
+    poller, client = _refresh_poller(settings)
+    monkeypatch.setattr("app.services.poller.SYNC_SETTLE_SECONDS", 0)
+    confirmed: list[str] = []
+
+    async def refresh_one(device_id: str) -> None:
+        confirmed.append(device_id)
+
+    monkeypatch.setattr(poller, "refresh_one", refresh_one)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+
+    poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="own-7", sync_read=True))
+    poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="own-7"))
+    await asyncio.sleep(0)
+    assert confirmed == []
+
+    # Joining a group: the follower now carries its lead's syncStat.
+    poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="lead-55", sync_read=True))
+    poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="lead-56", sync_read=True))
+    for _ in range(3):
+        await asyncio.sleep(0)
+    assert confirmed == ["p1"]
+    await poller.stop()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_a_pending_sync_confirm(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    poller, client = _refresh_poller(settings)
+    monkeypatch.setattr("app.services.poller.SYNC_SETTLE_SECONDS", 60)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="a"))
+    poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="b"))
+    task = poller._confirms["p1"]
+
+    await poller.stop()
+
+    assert task.done()
+    assert poller._confirms == {}
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_failed_refresh_is_logged_and_forgotten(
     settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
