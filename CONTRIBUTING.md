@@ -141,6 +141,10 @@ bluos-dashboard/
 ├── backend/app/          # FastAPI app (discovery, BluOS client, API, poller)
 ├── backend/tests/        # Backend tests (≥90% coverage required in CI)
 ├── frontend/src/         # React UI (Vite on :8765)
+│   ├── components/       # Pages and panels; player/ and house/ hold their sub-panels
+│   ├── hooks/            # Data loading and commands that pages share (usePlayerDetails, useSyncActions, …)
+│   ├── lib/              # Pure helpers with unit tests (fleet status, sync groups, formatting)
+│   └── store/            # fleetStore: fleet state, optimistic updates, hold windows
 ├── frontend/tests/       # Frontend unit tests (coverage gate in CI)
 ├── docs/                 # Configuration + runbook
 ├── docs/images/          # README screenshots
