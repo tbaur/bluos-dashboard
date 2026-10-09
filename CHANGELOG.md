@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.4](https://github.com/tbaur/bluos-dashboard/compare/v1.2.3...v1.2.4) (2026-10-09)
+
+
+### Bug Fixes
+
+* keep sync group followers with their lead in the Sync sort ([#111](https://github.com/tbaur/bluos-dashboard/issues/111)) ([18ed749](https://github.com/tbaur/bluos-dashboard/commit/18ed74974e82481e9f138d91452c6c4d70a6ac73))
+
 ## [1.2.3](https://github.com/tbaur/bluos-dashboard/compare/v1.2.2...v1.2.3) (2026-10-09)
 
 
