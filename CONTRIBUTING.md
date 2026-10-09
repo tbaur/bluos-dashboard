@@ -91,8 +91,8 @@ Run `make` with no target to list them.
 | `make run` | Development: API with reload, then the Vite UI at http://127.0.0.1:8765/ once the API is healthy |
 | `make build` | Production UI bundle in `frontend/dist` (the backend has no build step) |
 | `make serve` | `build`, then one process serves the UI and API at http://127.0.0.1:8780/ (`SERVE_PORT`), so it can stay up while you use `make run` |
-| `make lint` | Ruff and mypy, ESLint and `tsc` |
-| `make test` | pytest and Vitest with the CI coverage gates |
+| `make lint` | `lint-backend` (Ruff, mypy) and `lint-frontend` (ESLint, `tsc`) |
+| `make test` | `test-backend` (pytest) and `test-frontend` (Vitest), each with its CI coverage gate |
 | `make check` | `lint`, `test`, and `build`: everything CI runs except the dependency audits |
 | `make clean` | Remove build output, coverage, and caches |
 | `make distclean` | `clean`, plus `backend/.venv` and `frontend/node_modules` |
@@ -105,7 +105,7 @@ If you move or rename the checkout, run `make distclean install`. A venv records
 make check
 ```
 
-To run one side or one tool, use the commands that the targets wrap:
+For one side, use `make lint-backend test-backend` or `make lint-frontend test-frontend build`. CI runs those same targets. For one tool, use the commands that the targets wrap:
 
 ```bash
 # Backend
@@ -114,7 +114,6 @@ cd backend
 .venv/bin/mypy app
 .venv/bin/pytest --cov=app && .venv/bin/coverage report  # gate: fail_under in pyproject.toml
 .venv/bin/pip-audit --progress-spinner off                # CI only
-# Optional: pip install -e ".[dev]" -c requirements.lock (lock is a 3.14 freeze snapshot)
 
 # Frontend
 cd frontend
@@ -128,7 +127,7 @@ npm run build
 
 Coverage thresholds are defined next to the code they guard, so they stay correct as they are raised: `fail_under` in [backend/pyproject.toml](backend/pyproject.toml) for the backend, and the `thresholds` block in [frontend/vite.config.ts](frontend/vite.config.ts) for the frontend (global lines/statements/functions/branches, plus a per-file floor on `src/store/fleetStore.ts`, which holds the optimistic-update logic).
 
-[Tests](.github/workflows/test.yml) runs everything above on pull requests, as
+[Tests](.github/workflows/test.yml) runs the per-side make targets and the audits on pull requests, as
 `Backend (Python 3.10 | 3.13 | 3.14)` and `Frontend`. It also declares a
 `merge_group` trigger, which fires only if a merge queue is enabled.
 [CodeQL](.github/workflows/codeql.yml) runs on pull requests, on pushes to

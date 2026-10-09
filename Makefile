@@ -18,10 +18,11 @@ SERVE_PORT ?= 8780
 # Prints "host port" as the API resolves them: environment, then .env, then defaults.
 API_BIND = cd backend && $(PY) -c 'from app.config import get_settings; s = get_settings(); print(s.host, s.port)'
 
-.PHONY: help install build run serve lint test check clean distclean run-api run-ui
+.PHONY: help install build run serve lint lint-backend lint-frontend test test-backend \
+	test-frontend check clean distclean run-api run-ui
 
 help: ## List targets
-	@awk 'BEGIN { FS = ":.*## " } /^[a-z-]+:.*## / { printf "  make %-10s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN { FS = ":.*## " } /^[a-z-]+:.*## / { printf "  make %-14s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 install: $(VENV_STAMP) $(NODE_STAMP) ## Install backend and frontend dependencies (skips what is current)
 
@@ -59,12 +60,20 @@ run-ui:
 serve: build $(VENV_STAMP) ## Build the UI, then serve UI and API from one process on SERVE_PORT
 	cd backend && BSD_PORT=$(SERVE_PORT) BSD_STATIC_DIR=$(CURDIR)/$(DIST) exec $(PY) -m app.cli
 
-lint: install ## Ruff and mypy (backend); ESLint and tsc (frontend)
+lint: lint-backend lint-frontend ## Lint and type-check both sides
+
+lint-backend: $(VENV_STAMP) ## Ruff and mypy
 	cd backend && $(PY) -m ruff check app tests && $(PY) -m mypy app
+
+lint-frontend: $(NODE_STAMP) ## ESLint and tsc
 	cd frontend && npm run lint && npm run typecheck
 
-test: install ## Backend and frontend tests with the CI coverage gates
+test: test-backend test-frontend ## Test both sides with the CI coverage gates
+
+test-backend: $(VENV_STAMP) ## pytest, then the fail_under gate in pyproject.toml
 	cd backend && $(PY) -m pytest --cov=app --cov-report= && $(PY) -m coverage report
+
+test-frontend: $(NODE_STAMP) ## Vitest with the thresholds in vite.config.ts
 	cd frontend && npm run test:coverage
 
 check: lint test build ## Everything CI runs except the dependency audits
