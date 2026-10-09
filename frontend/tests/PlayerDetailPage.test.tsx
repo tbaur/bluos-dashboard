@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { Link, MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlayerDetailPage } from '@/components/PlayerDetailPage';
 import type { PlayerStatus } from '@/api/types';
@@ -260,6 +260,34 @@ describe('PlayerDetailPage maintenance', () => {
     details.open = true;
     fireEvent(details, new Event('toggle'));
     await waitFor(() => expect(summary()).toBe('queue 0 / inputs 1 / presets 0'));
+  });
+
+  it('starts fresh when moving to another player', async () => {
+    useFleetStore.setState({ devices: [sample, { ...sample, id: 'player-den', name: 'Den' }] });
+    getInputs.mockResolvedValue([
+      { name: 'Analog', type: 'analog', id: 'analog-1', selected: false },
+    ]);
+    const { container } = render(
+      <MemoryRouter initialEntries={['/player/player-kitchen']}>
+        <Link to="/player/player-den">Den</Link>
+        <Routes>
+          <Route path="/player/:id" element={<PlayerDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const summary = () => container.querySelector('summary .card-meta')?.textContent;
+    const details = () => container.querySelector('details')!;
+
+    await screen.findByRole('heading', { name: 'Kitchen' });
+    details().open = true;
+    fireEvent(details(), new Event('toggle'));
+    await waitFor(() => expect(summary()).toBe('queue 0 / inputs 1 / presets 0'));
+
+    fireEvent.click(screen.getByRole('link', { name: 'Den' }));
+    await screen.findByRole('heading', { name: 'Den' });
+    expect(summary()).toBe('queue 0');
+    expect(details().open).toBe(false);
+    expect(screen.queryByText('Analog')).not.toBeInTheDocument();
   });
 
   it('shows poller health on the device panel', async () => {
