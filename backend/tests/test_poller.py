@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import time
 
+import httpx
 import pytest
+import respx
 
 from app.bluos.client import BluOSClient
 from app.bluos.status import PlayerSnapshot
@@ -683,8 +685,8 @@ async def test_syncstat_change_reads_the_player_again_after_the_last_change(
     async def interrupt(device_ids: list[str]) -> None:
         events.append(f"interrupt:{','.join(device_ids)}")
 
-    async def refresh_one(device_id: str) -> None:
-        events.append(f"read:{device_id}")
+    async def refresh_one(device_id: str, *, record_miss: bool = True) -> None:
+        events.append(f"read:{device_id}:record_miss={record_miss}")
 
     monkeypatch.setattr(poller, "interrupt", interrupt)
     monkeypatch.setattr(poller, "refresh_one", refresh_one)
@@ -704,7 +706,7 @@ async def test_syncstat_change_reads_the_player_again_after_the_last_change(
     await asyncio.sleep(settle * 0.75)
     assert events == []
     await asyncio.sleep(settle)
-    assert events == ["interrupt:p1", "read:p1"]
+    assert events == ["interrupt:p1", "read:p1:record_miss=False"]
     await poller.stop()
     await client.aclose()
 
@@ -718,7 +720,7 @@ async def test_a_change_seen_by_the_confirm_read_schedules_one_more(
     player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
     reads: list[str] = []
 
-    async def refresh_one(device_id: str) -> None:
+    async def refresh_one(device_id: str, *, record_miss: bool = True) -> None:
         reads.append(device_id)
         # The first confirm read finds the group still moving (56 -> 57); the second does not.
         poller._remember_tags(
@@ -732,6 +734,66 @@ async def test_a_change_seen_by_the_confirm_read_schedules_one_more(
     assert reads == ["p1", "p1"]
     assert poller._confirms == {}
     await poller.stop()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_failed_confirm_read_is_not_a_drop(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Real refresh_one, real interrupt: the held long-poll is cancelled, and short
+    reads that fail leave the room as it was (no stale, no failure, no health drop)."""
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.endpoints_by_id = {"p1": player.endpoint}
+    discovery._snapshot.ids_by_endpoint = {player.endpoint: "p1"}
+    poller = StatusPoller(settings, discovery, client, EventBus())
+    monkeypatch.setattr("app.services.poller.SYNC_SETTLE_SECONDS", 0)
+    respx.get(url__regex=r"http://192\.168\.1\.20:11000/(Status|SyncStatus).*").mock(
+        side_effect=httpx.ConnectTimeout("player busy")
+    )
+    held = asyncio.create_task(asyncio.sleep(100))
+    poller._in_flight["p1"] = held  # type: ignore[assignment]
+
+    poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="own-7", sync_read=True))
+    poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="lead-55", sync_read=True))
+    confirm = poller._confirms["p1"]
+    await asyncio.wait_for(confirm, timeout=10)
+
+    assert held.cancelled()
+    room = discovery.get_device("p1")
+    assert room is not None
+    assert room.stale is False
+    assert room.consecutive_failures == 0
+    assert poller.health.snapshot().drops == []
+    assert poller._sync_stats["p1"] == "lead-55"
+    await poller.stop()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_failed_refresh_still_counts_as_a_miss_by_default(settings: Settings) -> None:
+    client = BluOSClient(settings)
+    discovery = DiscoveryService(settings, client)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    discovery._snapshot.devices = [player]
+    discovery._snapshot.endpoints_by_id = {"p1": player.endpoint}
+    discovery._snapshot.ids_by_endpoint = {player.endpoint: "p1"}
+    poller = StatusPoller(settings, discovery, client, EventBus())
+    respx.get(url__regex=r"http://192\.168\.1\.20:11000/(Status|SyncStatus).*").mock(
+        side_effect=httpx.ConnectTimeout("down")
+    )
+
+    await poller.refresh_one("p1")
+
+    room = discovery.get_device("p1")
+    assert room is not None
+    assert room.stale is True
+    assert room.consecutive_failures == 1
     await client.aclose()
 
 

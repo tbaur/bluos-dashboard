@@ -126,7 +126,16 @@ class StatusPoller:
             "health": self.health.snapshot().model_dump(),
         }
 
-    async def refresh_one(self, device_id: str) -> PlayerStatus | None:
+    async def refresh_one(
+        self, device_id: str, *, record_miss: bool = True
+    ) -> PlayerStatus | None:
+        """Read one player now and store the result.
+
+        A failed read normally counts as a miss: the room goes stale, its failure
+        count rises, and the health log opens a drop. With ``record_miss=False`` a
+        failed read changes nothing, for second looks such as the sync confirm;
+        the player's own status cycle still notices a real outage.
+        """
         endpoint = self.discovery.resolve_endpoint(device_id)
         if not endpoint:
             return None
@@ -140,6 +149,8 @@ class StatusPoller:
         if moved is not None and not self.discovery.same_endpoint(moved, endpoint):
             return self.discovery.get_device(device_id)
         if snap.player.status != "online":
+            if not record_miss:
+                return existing
             # A missed /Status is an empty shell. Do not replace the room with it.
             self._forget_tags(device_id)
             if existing is None:
@@ -194,7 +205,7 @@ class StatusPoller:
             del self._confirm_due[device_id]
             # Same as a control: free the held long-poll before reading the player.
             await self.interrupt([device_id])
-            result = await self.refresh_one(device_id)
+            result = await self.refresh_one(device_id, record_miss=False)
         return result
 
     def _start_once(
