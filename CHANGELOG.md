@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.5](https://github.com/tbaur/bluos-dashboard/compare/v1.2.4...v1.2.5) (2026-10-09)
+
+
+### Bug Fixes
+
+* confirm a player's sync group a few seconds after it changes ([#113](https://github.com/tbaur/bluos-dashboard/issues/113)) ([271704e](https://github.com/tbaur/bluos-dashboard/commit/271704e76d1e39fb0b74cbf9f54f7eacf4b7450f))
+
 ## [1.2.4](https://github.com/tbaur/bluos-dashboard/compare/v1.2.3...v1.2.4) (2026-10-09)
 
 
