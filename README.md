@@ -55,4 +55,6 @@ Full setup and checks: [CONTRIBUTING.md](CONTRIBUTING.md). Two-terminal start: [
 
 ## License
 
-Copyright 2026 tbaur. Apache License 2.0. See [LICENSE](LICENSE).
+Copyright 2026 tbaur
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) file for details.
