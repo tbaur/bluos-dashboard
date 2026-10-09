@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.7](https://github.com/tbaur/bluos-dashboard/compare/v1.2.6...v1.2.7) (2026-10-09)
+
+
+### Bug Fixes
+
+* don't count a failed sync confirm as a drop, and reset the player page per player ([#117](https://github.com/tbaur/bluos-dashboard/issues/117)) ([a298e93](https://github.com/tbaur/bluos-dashboard/commit/a298e938f2d2128564495eff5b9a020602d89575))
+
 ## [1.2.6](https://github.com/tbaur/bluos-dashboard/compare/v1.2.5...v1.2.6) (2026-10-09)
 
 
