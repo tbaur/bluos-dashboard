@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.6](https://github.com/tbaur/bluos-dashboard/compare/v1.2.5...v1.2.6) (2026-10-09)
+
+
+### Bug Fixes
+
+* debounce sync confirms and always run uvicorn's stop handler ([#115](https://github.com/tbaur/bluos-dashboard/issues/115)) ([ae40fde](https://github.com/tbaur/bluos-dashboard/commit/ae40fdecb9619de6cb8a80f2316f9f6e6821d2f3))
+
 ## [1.2.5](https://github.com/tbaur/bluos-dashboard/compare/v1.2.4...v1.2.5) (2026-10-09)
 
 
