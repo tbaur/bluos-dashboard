@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.0.0](https://github.com/tbaur/bluos-dashboard/compare/v1.2.7...v2.0.0) (2026-10-09)
+
+
+### Miscellaneous
+
+* cut 2.0.0 ([4b17659](https://github.com/tbaur/bluos-dashboard/commit/4b1765999471037f08631d88c47f3e93df4f28bf))
+
 ## [1.2.7](https://github.com/tbaur/bluos-dashboard/compare/v1.2.6...v1.2.7) (2026-10-09)
 
 
