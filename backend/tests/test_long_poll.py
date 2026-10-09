@@ -232,6 +232,54 @@ async def test_poller_second_cycle_long_polls_status(settings: Settings) -> None
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_poller_rereads_syncstatus_when_syncstat_never_moves(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A follower's /Status carries its lead's syncStat, so joining a group can
+    leave that value unchanged. The poller must still notice the new master."""
+    respx.get(url__regex=r"http://192\.168\.1\.20:11000/Status.*").mock(
+        return_value=httpx.Response(200, content=STATUS)
+    )
+    standalone = (
+        b'<SyncStatus name="K" brand="Bluesound" volume="22" etag="7" syncStat="own-7">'
+        b"</SyncStatus>"
+    )
+    joined = standalone.replace(
+        b"</SyncStatus>", b'<master port="11000">192.168.1.30</master></SyncStatus>'
+    )
+    sync_route = respx.get("http://192.168.1.20:11000/SyncStatus").mock(
+        side_effect=[
+            httpx.Response(200, content=standalone),
+            httpx.Response(200, content=joined),
+        ]
+    )
+    client = BluOSClient(settings)
+    poller, discovery = _poller(settings, client)
+    clock = {"now": 1000.0}
+    monkeypatch.setattr("app.services.poller.time.monotonic", lambda: clock["now"])
+    try:
+        await poller._poll_once()
+        assert discovery.snapshot.devices[0].sync_role == SyncRole.STANDALONE
+
+        # Same syncStat soon after: the cached SyncStatus is reused.
+        clock["now"] += 5
+        await poller._poll_once()
+        assert sync_route.call_count == 1
+        assert discovery.snapshot.devices[0].sync_role == SyncRole.STANDALONE
+
+        # Same syncStat, but the last read is old: read it again.
+        clock["now"] += 60
+        await poller._poll_once()
+        assert sync_route.call_count == 2
+        follower = discovery.snapshot.devices[0]
+        assert follower.sync_role == SyncRole.SYNCED
+        assert follower.master == "192.168.1.30:11000"
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_poller_clears_etag_when_player_goes_offline(settings: Settings) -> None:
     status_calls = {"n": 0}
 

@@ -28,11 +28,14 @@ export function sortBySyncGroup(devices: PlayerStatus[]): PlayerStatus[] {
     used.add(primary.id);
 
     const primaryEp = deviceEndpoint(primary);
+    // The lead's slave list is what the sync graph uses. A follower's own record
+    // can lag behind it after joining, so it does not have to say synced yet.
     const followers = devices
       .filter(
         (d) =>
-          d.sync_role === 'synced' &&
-          (endpointsMatch(d.master, primaryEp) ||
+          !used.has(d.id) &&
+          d.id !== primary.id &&
+          ((d.sync_role === 'synced' && endpointsMatch(d.master, primaryEp)) ||
             primary.slaves.some((slave) => endpointsMatch(slave, deviceEndpoint(d)))),
       )
       .slice()

@@ -29,6 +29,8 @@ class PlayerSnapshot:
     player: PlayerStatus
     status_etag: str = ""
     sync_stat: str = ""
+    # True when this snapshot read /SyncStatus rather than reusing the last one.
+    sync_read: bool = False
 
 
 class BluOSStatusMixin(BluOSTransport):
@@ -340,7 +342,9 @@ class BluOSStatusMixin(BluOSTransport):
 
         self._finalize_player(player)
         etag, sync_stat = self._tags_from_parsed(status, sync)
-        return PlayerSnapshot(player, status_etag=etag, sync_stat=sync_stat)
+        return PlayerSnapshot(
+            player, status_etag=etag, sync_stat=sync_stat, sync_read=bool(sync)
+        )
 
     async def load_player(
         self,
