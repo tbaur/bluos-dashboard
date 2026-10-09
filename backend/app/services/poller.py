@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Coroutine, Sequence
 from functools import partial
 from typing import Any
 
@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 # /SyncStatus can change (it joins a group) without that value moving. A read
 # taken just before the join settles would then be reused indefinitely.
 SYNC_RECHECK_SECONDS = 60.0
+# A player reports a new syncStat before its /SyncStatus shows the new group.
+# When syncStat changes, read the player once more after this pause.
+SYNC_SETTLE_SECONDS = 3.0
 
 
 class StatusPoller:
@@ -43,6 +46,7 @@ class StatusPoller:
         self._watchers: dict[str, asyncio.Task[None]] = {}
         self._in_flight: dict[str, asyncio.Task[PlayerSnapshot]] = {}
         self._refreshes: dict[str, asyncio.Task[PlayerStatus | None]] = {}
+        self._confirms: dict[str, asyncio.Task[PlayerStatus | None]] = {}
         self._control_holdoff_until: dict[str, float] = {}
         self._stop = asyncio.Event()
         self._failures: dict[str, int] = {}
@@ -163,16 +167,42 @@ class StatusPoller:
 
     def schedule_refresh(self, device_id: str) -> None:
         """Refresh one player in the background, at most one refresh per player at a time."""
-        existing = self._refreshes.get(device_id)
-        if existing is not None and not existing.done():
-            return
-        task = asyncio.create_task(self.refresh_one(device_id), name=f"refresh-{device_id}")
-        self._refreshes[device_id] = task
-        task.add_done_callback(partial(self._refresh_done, device_id))
+        self._start_once(self._refreshes, device_id, self.refresh_one(device_id), "refresh")
 
-    def _refresh_done(self, device_id: str, task: asyncio.Task[PlayerStatus | None]) -> None:
-        if self._refreshes.get(device_id) is task:
-            self._refreshes.pop(device_id, None)
+    def _confirm_sync_later(self, device_id: str) -> None:
+        """Read a player again once a sync change has settled on it."""
+
+        async def confirm() -> PlayerStatus | None:
+            await self._sleep(SYNC_SETTLE_SECONDS)
+            if self._stop.is_set():
+                return None
+            return await self.refresh_one(device_id)
+
+        self._start_once(self._confirms, device_id, confirm(), "sync-confirm")
+
+    def _start_once(
+        self,
+        tasks: dict[str, asyncio.Task[PlayerStatus | None]],
+        device_id: str,
+        work: Coroutine[Any, Any, PlayerStatus | None],
+        kind: str,
+    ) -> None:
+        existing = tasks.get(device_id)
+        if existing is not None and not existing.done():
+            work.close()
+            return
+        task = asyncio.create_task(work, name=f"{kind}-{device_id}")
+        tasks[device_id] = task
+        task.add_done_callback(partial(self._task_done, tasks, device_id))
+
+    @staticmethod
+    def _task_done(
+        tasks: dict[str, asyncio.Task[PlayerStatus | None]],
+        device_id: str,
+        task: asyncio.Task[PlayerStatus | None],
+    ) -> None:
+        if tasks.get(device_id) is task:
+            tasks.pop(device_id, None)
         if task.cancelled():
             return
         exc = task.exception()
@@ -448,10 +478,13 @@ class StatusPoller:
             return
         if snap.status_etag:
             self._status_etags[device_id] = snap.status_etag
+        previous_sync = self._sync_stats.get(device_id)
         if snap.sync_stat:
             self._sync_stats[device_id] = snap.sync_stat
         if snap.sync_read:
             self._sync_read_at[device_id] = time.monotonic()
+        if previous_sync and snap.sync_stat and snap.sync_stat != previous_sync:
+            self._confirm_sync_later(device_id)
 
     def _forget_tags(self, device_id: str) -> None:
         self._status_etags.pop(device_id, None)
@@ -475,8 +508,9 @@ class StatusPoller:
         await _cancel_all(tasks)
 
     async def _cancel_refreshes(self) -> None:
-        tasks = list(self._refreshes.values())
+        tasks = [*self._refreshes.values(), *self._confirms.values()]
         self._refreshes.clear()
+        self._confirms.clear()
         await _cancel_all(tasks)
 
     async def _wait_until_due(self, device_id: str) -> None:
