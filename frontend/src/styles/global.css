@@ -1530,6 +1530,23 @@ button.volume-linked-pill-action:disabled {
   gap: 6px;
 }
 
+/* Group members, as a real list inside the chain row; add-room chips follow it. */
+.sync-members {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sync-members > li {
+  display: flex;
+  min-width: 0;
+}
+
 .sync-arrow {
   color: var(--muted);
   font-size: 0.9rem;

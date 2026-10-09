@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SyncPanel } from '@/components/SyncPanel';
 import type { PlayerStatus, SyncState } from '@/api/types';
@@ -211,9 +211,41 @@ describe('SyncPanel', () => {
       });
     });
 
+    it('lists the group members for screen readers, with removable followers as buttons', () => {
+      render(<SyncPanel />);
+      const members = screen.getByRole('list', { name: 'Alpha group' });
+      const items = within(members).getAllByRole('listitem');
+      expect(items.map((item) => item.textContent?.replace('×', '').trim())).toEqual([
+        'Alpha',
+        'Bravo',
+        'Charlie',
+      ]);
+      expect(
+        within(members).getByRole('button', { name: 'Remove Bravo from the group' }),
+      ).toBeInTheDocument();
+    });
+
+    it('keeps add-room choices out of the member list', () => {
+      useFleetStore.setState({
+        devices: [
+          ...useFleetStore.getState().devices,
+          player({ id: 'd', name: 'Delta', ip: '10.0.0.4' }),
+        ],
+        sync: {
+          ...useFleetStore.getState().sync!,
+          standalone_ids: ['d'],
+        },
+      });
+      render(<SyncPanel />);
+      fireEvent.click(screen.getByRole('button', { name: 'Add rooms' }));
+      const members = screen.getByRole('list', { name: 'Alpha group' });
+      expect(screen.getByRole('button', { name: '+ Delta' })).toBeInTheDocument();
+      expect(within(members).queryByRole('button', { name: '+ Delta' })).not.toBeInTheDocument();
+    });
+
     it('removes one follower and keeps the rest of the group', async () => {
       render(<SyncPanel />);
-      fireEvent.click(screen.getByTitle('Remove Bravo'));
+      fireEvent.click(screen.getByRole('button', { name: 'Remove Bravo from the group' }));
       await waitFor(() => expect(syncRemove).toHaveBeenCalledWith('a', 'b'));
       expect(useFleetStore.getState().setSync).toHaveBeenCalledWith({
         groups: [expect.objectContaining({ slave_ids: ['c'], slave_names: ['Charlie'] })],
