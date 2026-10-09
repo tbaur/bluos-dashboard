@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 import respx
 
 from app.bluos.client import BluOSClient
+from app.bluos.result import CallResult
 from app.bluos.webui import BluOSWebUIMixin
 from app.config import Settings
+from app.models import DeviceSettingsResponse
 from tests.fixtures.xml_samples import (
     CAPTURE_SETTINGS,
     CAPTURE_SETTINGS_NO_BLUETOOTH,
@@ -702,3 +705,22 @@ async def test_ci_secondary_zone_status_and_add_slave_port(settings: Settings) -
         assert "port=11010" in str(add.calls.last.request.url)
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_settings_cache_invalidated_after_write(settings: Settings) -> None:
+    client = BluOSClient(settings)
+    client._settings_page_cache[("192.168.1.20:11000", "audio")] = (
+        0.0,
+        DeviceSettingsResponse(page_id="audio", settings=[]),
+    )
+    client._control_get = AsyncMock(return_value=CallResult.success(b"<ok/>"))  # type: ignore[method-assign]
+    ok = await client.set_device_setting(
+        "192.168.1.20",
+        "eq-treble",
+        "3",
+        control_path="/Volume",
+    )
+    assert ok is True
+    assert ("192.168.1.20:11000", "audio") not in client._settings_page_cache
+    await client.aclose()

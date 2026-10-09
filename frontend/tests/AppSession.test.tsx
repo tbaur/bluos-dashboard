@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '@/App';
@@ -23,13 +23,39 @@ vi.mock('@/components/PlayerDetailPage', () => ({
   PlayerDetailPage: () => <div>Player</div>,
 }));
 
+function respond(status: number) {
+  return {
+    ok: status < 400,
+    status,
+    statusText: '',
+    headers: new Headers(),
+    json: async () =>
+      status === 401
+        ? { error: 'unauthorized', message: 'Valid API token required', code: 'unauthorized' }
+        : { devices: [], discovered_at: null, discovery_method: '' },
+  };
+}
+
+function call(fetchMock: ReturnType<typeof vi.fn>, index: number) {
+  const [url, init] = fetchMock.mock.calls[index] as [string, RequestInit];
+  return { url, method: init.method ?? 'GET', auth: new Headers(init.headers).get('Authorization') };
+}
+
+function renderApp() {
+  return render(
+    <MemoryRouter>
+      <App />
+    </MemoryRouter>,
+  );
+}
+
 describe('built-in API token', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
   });
 
   it('sets the session cookie before the fleet renders', async () => {
-    let resolveFetch: (value: { ok: boolean; status: number }) => void = () => undefined;
+    let resolveFetch: (value: unknown) => void = () => undefined;
     const fetchMock = vi.fn().mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -38,42 +64,51 @@ describe('built-in API token', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp();
 
     expect(screen.queryByText('Fleet')).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/session',
-      expect.objectContaining({
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          Authorization: 'Bearer dev-token',
-          'X-BSD-Request': '1',
-        },
-      }),
-    );
+    expect(call(fetchMock, 0)).toEqual({
+      url: '/api/v1/session',
+      method: 'POST',
+      auth: 'Bearer dev-token',
+    });
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: 'include' });
 
-    resolveFetch({ ok: true, status: 204 });
+    resolveFetch(respond(204));
     expect(await screen.findByText('Fleet')).toBeInTheDocument();
   });
 
-  it('asks for a token when the built-in one is rejected', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ ok: false, status: 401 }),
-    );
+  it('opens the dashboard when the server has no token set', async () => {
+    // /session refuses when no token is configured; /devices is open.
+    const fetchMock = vi.fn().mockResolvedValueOnce(respond(401)).mockResolvedValue(respond(200));
+    vi.stubGlobal('fetch', fetchMock);
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp();
 
-    expect(await screen.findByLabelText('API token')).toBeInTheDocument();
-    expect(screen.queryByText('Fleet')).not.toBeInTheDocument();
+    expect(await screen.findByText('Fleet')).toBeInTheDocument();
+    expect(call(fetchMock, 1).url).toBe('/api/v1/devices');
+  });
+
+  it('asks for a token when the built-in one is rejected, and sends the typed one', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(respond(401))
+      .mockResolvedValueOnce(respond(401))
+      .mockResolvedValueOnce(respond(204));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp();
+
+    fireEvent.change(await screen.findByLabelText('API token'), {
+      target: { value: ' typed-token ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText('Fleet')).toBeInTheDocument();
+    expect(call(fetchMock, 2)).toEqual({
+      url: '/api/v1/session',
+      method: 'POST',
+      auth: 'Bearer typed-token',
+    });
   });
 });

@@ -33,13 +33,13 @@ Ops (health, logs, LAN bind): [docs/RUNBOOK.md](docs/RUNBOOK.md).
 ## Quick start
 
 ```bash
-make install   # backend venv + frontend deps
-make run       # API then UI (fails if :8000/:8765 busy; BSD_FORCE_FREE_PORTS=1 to reclaim)
+make serve     # everyday use: builds the UI, then serves UI and API at http://127.0.0.1:8780/
+make run       # development: API with reload at :8000, then the Vite UI at http://127.0.0.1:8765/
 ```
 
-Open http://127.0.0.1:8765/ (API on http://127.0.0.1:8000/).
+Both install dependencies on first use and can run at the same time. Run `make` with no target to list the rest: `build`, `lint`, `test`, `check`, `clean`, `distclean`.
 
-For a LAN bind, set `BSD_HOST=0.0.0.0` and `BSD_API_TOKEN` in the repo-root `.env`, and the same token as `VITE_API_TOKEN` in `frontend/.env` (Vite does not read the repo-root file). `make run` picks up both. Without a token, a non-loopback bind logs an `insecure_bind` warning and leaves every control open to the LAN. Copy [.env.example](.env.example) when you need non-default settings.
+For a LAN bind, set `BSD_HOST=0.0.0.0` and `BSD_API_TOKEN` in the repo-root `.env`, and the same token as `VITE_API_TOKEN` in `frontend/.env` (Vite does not read the repo-root file). `make serve` and `make run` pick up both. Without a token, a non-loopback bind logs an `insecure_bind` warning and leaves every control open to the LAN. Copy [.env.example](.env.example) when you need non-default settings.
 
 Full setup and checks: [CONTRIBUTING.md](CONTRIBUTING.md). Two-terminal start: [docs/RUNBOOK.md](docs/RUNBOOK.md). Variables: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 

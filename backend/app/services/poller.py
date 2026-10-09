@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Sequence
+from functools import partial
 from typing import Any
 
 from app.bluos.client import BluOSClient
@@ -36,6 +37,7 @@ class StatusPoller:
         self._task: asyncio.Task[None] | None = None
         self._watchers: dict[str, asyncio.Task[None]] = {}
         self._in_flight: dict[str, asyncio.Task[PlayerSnapshot]] = {}
+        self._refreshes: dict[str, asyncio.Task[PlayerStatus | None]] = {}
         self._control_holdoff_until: dict[str, float] = {}
         self._stop = asyncio.Event()
         self._failures: dict[str, int] = {}
@@ -80,6 +82,7 @@ class StatusPoller:
     async def stop(self) -> None:
         self._stop.set()
         await self._cancel_watchers()
+        await self._cancel_refreshes()
         if self._task:
             self._task.cancel()
             try:
@@ -151,6 +154,24 @@ class StatusPoller:
         stored = self.discovery.get_device(device_id) or player
         await self._publish_update(device_id, stored, fleet_before=fleet_before)
         return stored
+
+    def schedule_refresh(self, device_id: str) -> None:
+        """Refresh one player in the background, at most one refresh per player at a time."""
+        existing = self._refreshes.get(device_id)
+        if existing is not None and not existing.done():
+            return
+        task = asyncio.create_task(self.refresh_one(device_id), name=f"refresh-{device_id}")
+        self._refreshes[device_id] = task
+        task.add_done_callback(partial(self._refresh_done, device_id))
+
+    def _refresh_done(self, device_id: str, task: asyncio.Task[PlayerStatus | None]) -> None:
+        if self._refreshes.get(device_id) is task:
+            self._refreshes.pop(device_id, None)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.warning("refresh_one_failed", extra={"device_id": device_id}, exc_info=exc)
 
     async def interrupt(self, device_ids: Sequence[str]) -> None:
         """Drop held Status long-polls so a control request can use the player.
@@ -438,10 +459,12 @@ class StatusPoller:
     async def _cancel_watchers(self) -> None:
         tasks = list(self._watchers.values())
         self._watchers.clear()
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        await _cancel_all(tasks)
+
+    async def _cancel_refreshes(self) -> None:
+        tasks = list(self._refreshes.values())
+        self._refreshes.clear()
+        await _cancel_all(tasks)
 
     async def _wait_until_due(self, device_id: str) -> None:
         due = self._next_due.get(device_id, 0.0)
@@ -463,3 +486,10 @@ class StatusPoller:
             await asyncio.wait_for(self._stop.wait(), timeout=seconds)
         except asyncio.TimeoutError:
             return
+
+
+async def _cancel_all(tasks: Sequence[asyncio.Task[Any]]) -> None:
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)

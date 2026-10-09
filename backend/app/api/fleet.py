@@ -14,7 +14,6 @@ from app.api.common import (
     chassis_representatives,
     endpoint_host,
     fleet_action,
-    schedule_refresh,
 )
 from app.api.errors import AppError
 from app.bluos.result import take_control_result
@@ -74,7 +73,7 @@ async def set_fleet_volume(body: VolumeRequest, state: StateDep) -> FleetVolumeR
         )
         ok = await state.client.set_volume(endpoint, level)
         if ok:
-            schedule_refresh(state, device_id)
+            state.poller.schedule_refresh(device_id)
         else:
             failure = take_control_result()
             kind = failure.kind if failure else "failed"

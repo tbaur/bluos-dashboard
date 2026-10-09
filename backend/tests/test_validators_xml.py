@@ -131,3 +131,15 @@ def test_normalize_bluos_mac_strips_ci_zone_port() -> None:
     assert normalize_bluos_mac("90:56:82:16:61:b7") == "90:56:82:16:61:B7"
     assert normalize_bluos_mac("") == ""
     assert normalize_bluos_mac("not-a-mac") == "not-a-mac"
+
+
+def test_validators_edge_cases() -> None:
+    from app.validators import make_device_id, parse_bluos_host, sanitize_ip
+
+    assert sanitize_ip("") is None
+    assert sanitize_ip("192.168.1.1\n") is None
+    assert sanitize_ip("999.999.999.999") is None
+    assert parse_bluos_host("192.168.1.5:11000") == "192.168.1.5"
+    assert parse_bluos_host("") == ""
+    # Invalid node_id characters fall back to hash id
+    assert make_device_id("192.168.1.1", node_id="!!!").startswith("player-")

@@ -1,10 +1,17 @@
 import { create } from 'zustand';
 import { api } from '@/api/client';
-import type { FleetHealthResponse, PlayerStatus, SyncState } from '@/api/types';
+import type {
+  DevicesResponse,
+  FleetActionResponse,
+  FleetHealthResponse,
+  PlayerStatus,
+  SyncState,
+} from '@/api/types';
 import { ApiError } from '@/api/types';
 import {
   houseCatchupSession,
   houseStoppedSession,
+  isEstablishedPlayback,
   LIVE_HOUSE_SESSION,
   type HouseSession,
 } from '@/lib/houseSession';
@@ -15,7 +22,19 @@ export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline'
 const VOLUME_HOLD_MS = 2500;
 const PLAYBACK_HOLD_MS = 2000;
 const MUTE_HOLD_MS = 4500;
+/** Pause all and Stop all reach every player, so they hold longer than one skip. */
+const FLEET_PLAYBACK_HOLD_MS = 4500;
+const SYNC_HOLD_MS = 5000;
 const HOUSE_CATCHUP_MS = 10_000;
+/** BluOS SyncStatus often lags AddSlave by a few seconds. */
+const LINK_RETRY_ATTEMPTS = 16;
+const LINK_RETRY_MS = 200;
+const DEFAULT_UNMUTE_VOLUME = 20;
+
+/** A slider drag can outlast one round trip, so its hold covers the whole gesture. */
+export const DRAG_VOLUME_HOLD_MS = 5000;
+/** Group and ungroup take a few seconds to show up in /SyncStatus. */
+export const GROUP_CHANGE_SYNC_HOLD_MS = 6000;
 
 let houseCatchupTimer: number | undefined;
 /** Latest control per device. An older failure must not roll back a newer command. */
@@ -104,14 +123,15 @@ function isMutePatch(patch?: Partial<PlayerStatus>): boolean {
   return Boolean(patch && patch.muted !== undefined);
 }
 
-function stampHold(
+/** Copy of `current` with every id in `ids` set to `value`. */
+function setEach(
   current: Record<string, number>,
   ids: Iterable<string>,
-  until: number,
+  value: number,
 ): Record<string, number> {
   const next = { ...current };
   for (const id of ids) {
-    next[id] = until;
+    next[id] = value;
   }
   return next;
 }
@@ -280,6 +300,92 @@ function releaseHold(entries: Record<string, number>, ids: Iterable<string>): Re
   return next;
 }
 
+/** Volume to restore on unmute: the last audible level, else the current one, else a default. */
+function unmuteVolume(state: FleetState, device: PlayerStatus): number {
+  return (
+    state.lastAudibleVolume[device.id] ??
+    (device.volume > 0 ? device.volume : DEFAULT_UNMUTE_VOLUME)
+  );
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? err.message : fallback;
+}
+
+/** Toast text for a failed call, with the request id so it can be found in the logs. */
+function errorToast(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? `${err.message} (${err.requestId})` : fallback;
+}
+
+function partialToast(label: string, result: { succeeded: number; failed: number }): string {
+  return `${label}: ${result.succeeded} ok, ${result.failed} failed`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+type FleetSnapshot = {
+  fleet: DevicesResponse;
+  sync: SyncState;
+  health: FleetHealthResponse | null;
+};
+
+async function fetchSnapshot(
+  devices: () => Promise<DevicesResponse>,
+  lastHealth: FleetHealthResponse | null,
+): Promise<FleetSnapshot> {
+  const [fleet, sync, health] = await Promise.all([
+    devices(),
+    api.getSync(),
+    api.getFleetHealth().catch(() => lastHealth),
+  ]);
+  return { fleet, sync, health };
+}
+
+/**
+ * State update for a REST snapshot. With `acceptSync` false the painted sync
+ * graph stays, because BluOS has not caught up with a group change yet.
+ */
+function snapshotPatch(
+  state: FleetState,
+  snapshot: FleetSnapshot,
+  acceptSync: boolean,
+): Partial<FleetState> {
+  const { fleet, sync, health } = snapshot;
+  return {
+    devices: dropStaleFollowerClaims(
+      mergedDeviceList(state, fleet.devices),
+      acceptSync ? sync : state.sync,
+    ),
+    ...prunedHolds(state, fleet.devices),
+    discoveredAt: fleet.discovered_at,
+    discoveryMethod: fleet.discovery_method,
+    health: health ?? state.health,
+    ...(acceptSync ? { sync, syncHoldUntil: 0 } : {}),
+  };
+}
+
+type SetFleetState = (
+  partial: Partial<FleetState> | ((state: FleetState) => Partial<FleetState>),
+) => void;
+
+/** Run a house-wide action. Partial failure is a toast; a failed call runs `undo`. */
+async function runFleetAction(
+  set: SetFleetState,
+  label: string,
+  call: () => Promise<FleetActionResponse>,
+  undo: () => void,
+): Promise<void> {
+  try {
+    const result = await call();
+    if (result.failed > 0) set({ toast: partialToast(label, result) });
+  } catch (err) {
+    undo();
+    set({ toast: errorToast(err, `${label} failed`) });
+  }
+}
+
 export const useFleetStore = create<FleetState>((set, get) => ({
   devices: [],
   discoveredAt: null,
@@ -397,7 +503,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     set({ houseSession: houseStoppedSession() });
   },
 
-  holdSync: (ms = 5000) => set({ syncHoldUntil: Date.now() + ms }),
+  holdSync: (ms = SYNC_HOLD_MS) => set({ syncHoldUntil: Date.now() + ms }),
 
   setConnection: (connection) => set({ connection }),
   setSync: (sync) =>
@@ -433,15 +539,8 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     const ids = scoped ? deviceIds : get().devices.map((d) => d.id);
     if (ids.length === 0) return;
 
-    if (scoped) {
-      get().holdVolumes(ids);
-      get().setVolumesLocal(clamped, ids);
-    } else {
-      get().holdAllVolumes();
-      get().setAllVolumesLocal(clamped);
-    }
-    try {
-      const result = await api.setFleetVolume(clamped, scoped ? ids : undefined);
+    // Painted again after the call, so the hold outlasts the round trip.
+    const paint = () => {
       if (scoped) {
         get().holdVolumes(ids);
         get().setVolumesLocal(clamped, ids);
@@ -449,27 +548,21 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         get().holdAllVolumes();
         get().setAllVolumesLocal(clamped);
       }
+    };
+    paint();
+    try {
+      const result = await api.setFleetVolume(clamped, scoped ? ids : undefined);
+      paint();
       if (clamped > 0) {
-        set((state) => {
-          const lastAudibleVolume = { ...state.lastAudibleVolume };
-          for (const id of ids) {
-            lastAudibleVolume[id] = clamped;
-          }
-          return { lastAudibleVolume };
-        });
+        set((state) => ({
+          lastAudibleVolume: setEach(state.lastAudibleVolume, ids, clamped),
+        }));
       }
-      if (result.failed > 0) {
-        set({
-          toast: `Volume ${clamped}: ${result.succeeded} ok, ${result.failed} failed`,
-        });
-      }
+      if (result.failed > 0) set({ toast: partialToast(`Volume ${clamped}`, result) });
     } catch (err) {
       set({
         globalVolumeHoldUntil: scoped ? get().globalVolumeHoldUntil : 0,
-        toast:
-          err instanceof ApiError
-            ? `${err.message} (${err.requestId})`
-            : 'Failed to set volume',
+        toast: errorToast(err, 'Failed to set volume'),
       });
       try {
         const fleet = await api.listDevices();
@@ -485,13 +578,10 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     if (!device) return;
 
     if (device.muted) {
-      const restore =
-        get().lastAudibleVolume[deviceId] ??
-        (device.volume > 0 ? device.volume : 20);
       await get().control(
         deviceId,
         () => api.setMute(deviceId, false),
-        { muted: false, volume: restore },
+        { muted: false, volume: unmuteVolume(get(), device) },
       );
       return;
     }
@@ -516,147 +606,85 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     if (devices.length === 0) return;
     const before = new Map(devices.map((d) => [d.id, d]));
 
-    if (mute) {
-      set((state) => {
-        const lastAudibleVolume = { ...state.lastAudibleVolume };
-        const until = Date.now() + MUTE_HOLD_MS;
-        const ids = state.devices.map((d) => d.id);
-        for (const device of state.devices) {
-          if (device.volume > 0) lastAudibleVolume[device.id] = device.volume;
-        }
-        return {
-          lastAudibleVolume,
-          muteHoldUntil: stampHold(state.muteHoldUntil, ids, until),
-          volumeHoldUntil: stampHold(state.volumeHoldUntil, ids, until),
-          devices: state.devices.map((d) => ({ ...d, muted: true, volume: 0 })),
-        };
-      });
-    } else {
-      set((state) => {
-        const until = Date.now() + MUTE_HOLD_MS;
-        const ids = state.devices.map((d) => d.id);
-        return {
-          muteHoldUntil: stampHold(state.muteHoldUntil, ids, until),
-          volumeHoldUntil: stampHold(state.volumeHoldUntil, ids, until),
-          devices: state.devices.map((d) => ({
-            ...d,
-            muted: false,
-            volume: state.lastAudibleVolume[d.id] ?? (d.volume > 0 ? d.volume : 20),
-          })),
-        };
-      });
-    }
+    set((state) => {
+      const until = Date.now() + MUTE_HOLD_MS;
+      const ids = state.devices.map((d) => d.id);
+      const audible = state.devices.filter((d) => d.volume > 0);
+      return {
+        lastAudibleVolume: mute
+          ? { ...state.lastAudibleVolume, ...Object.fromEntries(audible.map((d) => [d.id, d.volume])) }
+          : state.lastAudibleVolume,
+        muteHoldUntil: setEach(state.muteHoldUntil, ids, until),
+        volumeHoldUntil: setEach(state.volumeHoldUntil, ids, until),
+        devices: state.devices.map((d) =>
+          mute
+            ? { ...d, muted: true, volume: 0 }
+            : { ...d, muted: false, volume: unmuteVolume(state, d) },
+        ),
+      };
+    });
 
-    try {
-      const result = await api.fleetMute(mute);
-      if (result.failed > 0) {
-        set({
-          toast: `Fleet ${mute ? 'mute' : 'unmute'}: ${result.succeeded} ok, ${result.failed} failed`,
-        });
-      }
-    } catch (err) {
-      // Undo the optimistic paint and release the holds so server truth returns.
+    // A failure releases the holds as well, so server truth returns.
+    await runFleetAction(set, `Fleet ${mute ? 'mute' : 'unmute'}`, () => api.fleetMute(mute), () =>
       set((state) => ({
         devices: revertFields(state.devices, before, ['muted', 'volume']),
         muteHoldUntil: releaseHold(state.muteHoldUntil, before.keys()),
         volumeHoldUntil: releaseHold(state.volumeHoldUntil, before.keys()),
-        toast:
-          err instanceof ApiError
-            ? `${err.message} (${err.requestId})`
-            : 'Fleet mute failed',
-      }));
-    }
+      })),
+    );
   },
 
   fleetPauseAll: async () => {
     const before = new Map(get().devices.map((d) => [d.id, d]));
-    set((state) => {
-      const playbackHoldUntil = { ...state.playbackHoldUntil };
-      const until = Date.now() + MUTE_HOLD_MS;
-      for (const device of state.devices) {
-        playbackHoldUntil[device.id] = until;
-      }
-      return {
-        playbackHoldUntil,
-        devices: state.devices.map((d) => ({
-          ...d,
-          state: d.state === 'play' || d.state === 'stream' ? 'pause' : d.state,
-        })),
-      };
-    });
-    try {
-      const result = await api.fleetPause();
-      if (result.failed > 0) {
-        set({
-          toast: `Pause all: ${result.succeeded} ok, ${result.failed} failed`,
-        });
-      }
-    } catch (err) {
+    set((state) => ({
+      playbackHoldUntil: setEach(
+        state.playbackHoldUntil,
+        before.keys(),
+        Date.now() + FLEET_PLAYBACK_HOLD_MS,
+      ),
+      devices: state.devices.map((d) => ({
+        ...d,
+        state: isEstablishedPlayback(d.state) ? 'pause' : d.state,
+      })),
+    }));
+    await runFleetAction(set, 'Pause all', api.fleetPause, () =>
       set((state) => ({
         devices: revertFields(state.devices, before, ['state']),
         playbackHoldUntil: releaseHold(state.playbackHoldUntil, before.keys()),
-        toast:
-          err instanceof ApiError
-            ? `${err.message} (${err.requestId})`
-            : 'Pause all failed',
-      }));
-    }
+      })),
+    );
   },
 
   fleetStopAll: async () => {
     const before = new Map(get().devices.map((d) => [d.id, d]));
     get().beginHouseStopped();
-    set((state) => {
-      const until = Date.now() + MUTE_HOLD_MS;
-      const ids = state.devices.map((d) => d.id);
-      return {
-        playbackHoldUntil: stampHold(state.playbackHoldUntil, ids, until),
-        devices: state.devices.map((d) => ({ ...d, state: 'stop' })),
-      };
-    });
-    try {
-      const result = await api.fleetStop();
-      if (result.failed > 0) {
-        set({
-          toast: `Stop all: ${result.succeeded} ok, ${result.failed} failed`,
-        });
-      }
-    } catch (err) {
+    set((state) => ({
+      playbackHoldUntil: setEach(
+        state.playbackHoldUntil,
+        before.keys(),
+        Date.now() + FLEET_PLAYBACK_HOLD_MS,
+      ),
+      devices: state.devices.map((d) => ({ ...d, state: 'stop' })),
+    }));
+    await runFleetAction(set, 'Stop all', api.fleetStop, () => {
       // Also drop the "stopped" house session — nothing actually stopped.
       clearHouseCatchupTimer();
       set((state) => ({
         devices: revertFields(state.devices, before, ['state']),
         playbackHoldUntil: releaseHold(state.playbackHoldUntil, before.keys()),
         houseSession: LIVE_HOUSE_SESSION,
-        toast:
-          err instanceof ApiError
-            ? `${err.message} (${err.requestId})`
-            : 'Stop all failed',
       }));
-    }
+    });
   },
 
   fleetRebootAll: async () => {
-    const count = get().devices.length;
-    if (count === 0) return;
+    if (get().devices.length === 0) return;
     try {
       const result = await api.fleetReboot();
-      if (result.failed > 0) {
-        set({
-          toast: `Reboot: ${result.succeeded} ok, ${result.failed} failed`,
-        });
-      } else {
-        set({
-          toast: `Reboot sent to ${result.succeeded} player${result.succeeded === 1 ? '' : 's'}`,
-        });
-      }
+      const sent = `Reboot sent to ${result.succeeded} player${result.succeeded === 1 ? '' : 's'}`;
+      set({ toast: result.failed > 0 ? partialToast('Reboot', result) : sent });
     } catch (err) {
-      set({
-        toast:
-          err instanceof ApiError
-            ? `${err.message} (${err.requestId})`
-            : 'Fleet reboot failed',
-      });
+      set({ toast: errorToast(err, 'Fleet reboot failed') });
     }
   },
 
@@ -665,115 +693,55 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     // placeholder when there is nothing to show, or the fleet blanks every tick.
     set({ loading: get().devices.length === 0, error: null });
     try {
-      const [fleet, sync, health] = await Promise.all([
-        api.listDevices(),
-        api.getSync(),
-        api.getFleetHealth().catch(() => get().health),
-      ]);
-      set((state) => {
-        const stale = isStaleSync(state, sync);
-        const nextSync = stale ? state.sync : sync;
-        return {
-          devices: dropStaleFollowerClaims(mergedDeviceList(state, fleet.devices), nextSync),
-          ...prunedHolds(state, fleet.devices),
-          discoveredAt: fleet.discovered_at,
-          discoveryMethod: fleet.discovery_method,
-          ...(stale ? {} : { sync, syncHoldUntil: 0 }),
-          health: health ?? state.health,
-          loading: false,
-        };
-      });
+      const snapshot = await fetchSnapshot(api.listDevices, get().health);
+      set((state) => ({
+        ...snapshotPatch(state, snapshot, !isStaleSync(state, snapshot.sync)),
+        loading: false,
+      }));
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Failed to load devices';
-      set({ loading: false, error: message });
+      set({ loading: false, error: errorMessage(err, 'Failed to load devices') });
     }
   },
 
   refresh: async () => {
     set({ refreshing: true, error: null });
     try {
-      const [fleet, sync, health] = await Promise.all([
-        api.refreshDevices(),
-        api.getSync(),
-        api.getFleetHealth().catch(() => get().health),
-      ]);
-      set((state) => {
-        const stale = isStaleSync(state, sync);
-        const nextSync = stale ? state.sync : sync;
-        return {
-          devices: dropStaleFollowerClaims(mergedDeviceList(state, fleet.devices), nextSync),
-          ...prunedHolds(state, fleet.devices),
-          discoveredAt: fleet.discovered_at,
-          discoveryMethod: fleet.discovery_method,
-          ...(stale ? {} : { sync, syncHoldUntil: 0 }),
-          health: health ?? state.health,
-          refreshing: false,
-        };
-      });
+      const snapshot = await fetchSnapshot(api.refreshDevices, get().health);
+      set((state) => ({
+        ...snapshotPatch(state, snapshot, !isStaleSync(state, snapshot.sync)),
+        refreshing: false,
+      }));
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Refresh failed';
+      const message = errorMessage(err, 'Refresh failed');
       set({ refreshing: false, error: message, toast: message });
     }
   },
 
   reloadStatus: async (opts) => {
     const ensure = opts?.ensureLink;
-    const linkPresent = (sync: SyncState | null | undefined) => {
-      if (!ensure) return true;
-      return Boolean(
-        sync?.groups.some(
-          (g) =>
-            g.primary_id === ensure.primaryId && g.slave_ids.includes(ensure.slaveId),
-        ),
+    const linkPresent = (sync: SyncState) =>
+      !ensure ||
+      sync.groups.some(
+        (g) => g.primary_id === ensure.primaryId && g.slave_ids.includes(ensure.slaveId),
       );
-    };
 
-    const attempts = ensure ? 16 : 1;
+    const attempts = ensure ? LINK_RETRY_ATTEMPTS : 1;
     let lastError: unknown;
     for (let attempt = 0; attempt < attempts; attempt++) {
       try {
-        const [fleet, sync, health] = await Promise.all([
-          api.listDevices(),
-          api.getSync(),
-          api.getFleetHealth().catch(() => get().health),
-        ]);
-        if (!linkPresent(sync)) {
-          // BluOS SyncStatus often lags AddSlave — keep optimistic sync painted.
-          set((state) => ({
-            devices: dropStaleFollowerClaims(
-              mergedDeviceList(state, fleet.devices),
-              state.sync,
-            ),
-            ...prunedHolds(state, fleet.devices),
-            discoveredAt: fleet.discovered_at,
-            discoveryMethod: fleet.discovery_method,
-            health: health ?? state.health,
-          }));
-          await new Promise((r) => window.setTimeout(r, 200));
-          continue;
-        }
-        set((state) => ({
-          devices: dropStaleFollowerClaims(mergedDeviceList(state, fleet.devices), sync),
-          ...prunedHolds(state, fleet.devices),
-          discoveredAt: fleet.discovered_at,
-          discoveryMethod: fleet.discovery_method,
-          sync,
-          health: health ?? state.health,
-          syncHoldUntil: 0,
-        }));
-        return;
+        const snapshot = await fetchSnapshot(api.listDevices, get().health);
+        const linked = linkPresent(snapshot.sync);
+        // Until the link shows up, keep the optimistic sync graph painted.
+        set((state) => snapshotPatch(state, snapshot, linked));
+        if (linked) return;
       } catch (err) {
         lastError = err;
-        if (attempt < attempts - 1) {
-          await new Promise((r) => window.setTimeout(r, 200));
-          continue;
-        }
       }
+      if (attempt < attempts - 1) await sleep(LINK_RETRY_MS);
     }
 
     if (lastError) {
-      const message =
-        lastError instanceof ApiError ? lastError.message : 'Status reload failed';
+      const message = errorMessage(lastError, 'Status reload failed');
       set({ error: message, toast: message });
     }
   },
@@ -784,7 +752,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     const previous = get().devices.find((d) => d.id === deviceId);
     const volumeOnly = isVolumeOnlyPatch(optimistic);
     const mutePatch = isMutePatch(optimistic);
-    if (optimistic?.state === 'play' || optimistic?.state === 'stream') {
+    if (optimistic?.state !== undefined && isEstablishedPlayback(optimistic.state)) {
       get().beginHouseCatchup([deviceId]);
     }
     if (mutePatch) {
@@ -813,11 +781,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
       if (previous && controlEpoch.get(deviceId) === epoch) {
         get().patchDevice(deviceId, previous);
       }
-      const message =
-        err instanceof ApiError
-          ? `${err.message} (${err.requestId})`
-          : 'Control command failed';
-      set({ toast: message });
+      set({ toast: errorToast(err, 'Control command failed') });
     }
   },
 }));

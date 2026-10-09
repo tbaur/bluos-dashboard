@@ -37,18 +37,25 @@ export default defineConfig({
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/main.tsx', 'src/vite-env.d.ts', 'src/version.ts'],
       thresholds: {
-        lines: 72,
-        functions: 70,
-        statements: 72,
-        branches: 62,
+        lines: 86,
+        functions: 85,
+        statements: 84,
+        branches: 71,
         // The store holds the optimistic-update and hold-window logic, which is
         // where the subtle races live. Gate it on its own so a global average
         // cannot hide a regression here.
         'src/store/fleetStore.ts': {
-          lines: 52,
-          functions: 55,
-          statements: 52,
-          branches: 46,
+          lines: 95,
+          functions: 95,
+          statements: 95,
+          branches: 88,
+        },
+        // Every method is pinned by the route table in tests/apiClient.test.ts.
+        'src/api/client.ts': {
+          lines: 90,
+          functions: 100,
+          statements: 90,
+          branches: 80,
         },
       },
     },

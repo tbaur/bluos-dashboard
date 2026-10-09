@@ -8,7 +8,7 @@ import { HouseRemote } from '@/components/HouseRemote';
 import { compareFirmware } from '@/lib/firmware';
 import { sortDevices } from '@/lib/fleetSort';
 import { META_SEP } from '@/lib/meta';
-import { useFleetStore } from '@/store/fleetStore';
+import { GROUP_CHANGE_SYNC_HOLD_MS, useFleetStore } from '@/store/fleetStore';
 
 export function HousePage() {
   const devices = useFleetStore((s) => s.devices);
@@ -52,7 +52,7 @@ export function HousePage() {
         groups: [],
         standalone_ids: useFleetStore.getState().devices.map((d) => d.id),
       });
-      holdSync(6000);
+      holdSync(GROUP_CHANGE_SYNC_HOLD_MS);
       await reloadStatus();
       if (result.failed > 0) {
         setToast(`Ungrouped ${result.succeeded}; ${result.failed} failed`);

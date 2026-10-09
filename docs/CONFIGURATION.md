@@ -4,7 +4,7 @@ All settings are environment variables with the `BSD_` prefix. Copy [.env.exampl
 
 Default settings are for local development: bind localhost, discover via mDNS+LSDP, long-poll player Status, and throttle both outbound BluOS calls and inbound mutating API requests (plus expensive GETs such as `/api/v1/fleet/upgrades`).
 
-Local UI is Vite on **port 8765** (`make run` / `frontend` `npm run dev`). CORS defaults match that origin. The API defaults to **port 8000**.
+Local UI is Vite on **port 8765** (`make run` / `frontend` `npm run dev`). CORS defaults match that origin. The API defaults to **port 8000**. `make serve` puts the UI and API on one port, **8780** (`SERVE_PORT`), so CORS does not apply to it.
 
 BluOS control paths follow Custom Integration API **v1.7** (queue via `/Playlist`, capture inputs via `/Settings?id=capture`, Bluetooth via `/audiomodes`, audio/player settings via `/Settings?id=audio|player`). Device diagnostics and upgrade checks use the player web UI on port 80 (`/diagnostics`, `/upgrade`). Setting writes use the reverse-engineered web UI `POST /settings` form (same path as the native control panel).
 
@@ -26,22 +26,16 @@ The backend only talks to discovered private IPs (see `BSD_ALLOW_NON_PRIVATE_IPS
 | `BSD_PORT` | `8000` | Bind port |
 | `BSD_LOG_LEVEL` | `INFO` | Log level |
 | `BSD_CORS_ORIGINS` | `http://127.0.0.1:8765,http://localhost:8765` | Allowed CORS origins (comma-separated) |
-| `BSD_API_TOKEN` | *(empty)* | When set, require `Authorization: Bearer …`, `X-API-Token`, or the `bsd_session` cookie for `/api/v1/*` (health/ready/version exempt; older SSE clients may use `?token=`). The token does not lock players on the LAN; they have no auth. It locks a dashboard that is reachable from a network that cannot reach the players. `POST /api/v1/session` with the bearer token sets the cookie. Dev may still set `VITE_API_TOKEN` in `frontend/.env` |
+| `BSD_API_TOKEN` | *(empty)* | When set, require `Authorization: Bearer …`, `X-API-Token`, or the `bsd_session` cookie for `/api/v1/*` (health/ready/version exempt). The SSE stream authenticates the same way; a `?token=` query is not accepted. The token does not lock players on the LAN; they have no auth. It locks a dashboard that is reachable from a network that cannot reach the players. `POST /api/v1/session` with the bearer token sets the cookie (an HMAC of the token, not the token). Dev may still set `VITE_API_TOKEN` in `frontend/.env` |
 | `BSD_TRUSTED_PROXIES` | *(empty)* | Comma-separated peer IPs allowed to supply `X-Forwarded-For` for API rate-limit keys |
 | `BSD_STATIC_DIR` | *(empty)* | SPA dist directory for single-process serve (path relative to uvicorn cwd) |
 | `BSD_ENABLE_OPENAPI` | auto | OpenAPI/Swagger; auto-off when binding beyond localhost |
 
-`BSD_HOST` and `BSD_PORT` are read by the API and by `make run` (from the environment first, then the repo-root `.env`). `make run` also passes the port to Vite so the dev proxy follows it. When `BSD_HOST` is `0.0.0.0`, the health probe and the UI proxy still use `127.0.0.1`.
+`make run` reads `BSD_HOST` and `BSD_PORT` through the backend's settings loader, so it follows the same precedence as the API. It also passes the port to Vite so the dev proxy follows it. When `BSD_HOST` is `0.0.0.0`, the health probe and the UI proxy still use `127.0.0.1`.
+
+`make serve` uses `BSD_HOST` but listens on the make variable `SERVE_PORT` (default `8780`) instead of `BSD_PORT`, so it does not collide with `make run`. Set it on the command line or in the environment (`make serve SERVE_PORT=9000`). `.env` does not set it, because the API does not read it.
 
 Binding beyond loopback with an empty `BSD_API_TOKEN` logs an `insecure_bind` warning at startup. On the player LAN that is the same exposure as the players themselves. The token matters when the dashboard is the only service a caller can reach.
-
-## Scripts
-
-These are read by `scripts/run` only, not by the API.
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `BSD_FORCE_FREE_PORTS` | `0` | `1` kills existing listeners on the API/UI ports instead of failing |
 
 ## Discovery
 
@@ -105,7 +99,7 @@ Drop history (`GET /api/v1/fleet/health`, House page Health, player 12-hour pres
 
 ## Common adjustments
 
-- **Single-process deploy:** `make build`, then from `backend/` set `BSD_STATIC_DIR=../frontend/dist` (path is relative to the uvicorn working directory) — see [RUNBOOK.md](RUNBOOK.md).
+- **Single-process deploy:** `make serve`, or `make build` and then set `BSD_STATIC_DIR=../frontend/dist` from `backend/` (the path is relative to the uvicorn working directory). See [RUNBOOK.md](RUNBOOK.md).
 - **Discovery trouble:** try `BSD_DISCOVERY_METHOD=lsdp` or increase `BSD_DISCOVERY_TIMEOUT`.
 - **Slow VPN/firewall:** increase `BSD_DEVICE_HTTP_TIMEOUT` (connect/control) or `BSD_STATUS_LONG_POLL_SECONDS` (Status hold).
 

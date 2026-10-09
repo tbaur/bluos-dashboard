@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import signal
 from pathlib import Path
+from types import FrameType
 from unittest.mock import AsyncMock
 
 import pytest
@@ -64,6 +67,36 @@ async def test_lifespan_starts_and_stops(
             assert docs.status_code == 200
             assert docs.headers["content-security-policy"] == _SWAGGER_CSP
             assert health.headers["content-security-policy"] == _DEFAULT_CSP
+
+
+@pytest.mark.asyncio
+async def test_stop_signal_closes_the_event_bus_while_the_app_runs(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def empty_refresh(self: DiscoveryService):
+        return DiscoverySnapshot(discovered_at=1.0, method_used="mdns")
+
+    monkeypatch.setattr(DiscoveryService, "refresh", empty_refresh)
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    server_stops: list[int] = []
+
+    def server_handler(signum: int, frame: FrameType | None) -> None:
+        server_stops.append(signum)
+
+    saved = signal.signal(signal.SIGTERM, server_handler)
+    try:
+        app = create_app()
+        async with app.router.lifespan_context(app):
+            chained = signal.getsignal(signal.SIGTERM)
+            assert callable(chained)
+            chained(signal.SIGTERM, None)
+            await asyncio.sleep(0)
+            assert app.state.app_state.events.closed
+            assert server_stops == [signal.SIGTERM]
+        assert signal.getsignal(signal.SIGTERM) is server_handler
+    finally:
+        signal.signal(signal.SIGTERM, saved)
 
 
 @pytest.mark.asyncio
@@ -213,24 +246,3 @@ def test_warn_if_open_to_network(host: str, token: str, expected: bool) -> None:
     get_settings.cache_clear()
     assert warn_if_open_to_network(Settings(host=host, api_token=token)) is expected
 
-
-@pytest.mark.asyncio
-async def test_drain_pending_refreshes_cancels_in_flight() -> None:
-    import asyncio
-
-    from app.api.common import _pending_refresh, drain_pending_refreshes
-
-    started = asyncio.Event()
-
-    async def slow() -> None:
-        started.set()
-        await asyncio.sleep(60)
-
-    task: asyncio.Task[object] = asyncio.create_task(slow())
-    _pending_refresh["device-1"] = task
-    await started.wait()
-
-    await drain_pending_refreshes()
-
-    assert task.cancelled()
-    assert _pending_refresh == {}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,12 +13,12 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api.common import drain_pending_refreshes
 from app.api.errors import AppError
 from app.api.routes import router
 from app.bluos.client import BluOSClient
 from app.config import Settings, get_settings
 from app.discovery.service import DiscoveryService
+from app.exit_signals import on_exit_signal
 from app.logging import configure_logging, request_id_var
 from app.middleware import RequestContextMiddleware
 from app.services.events import EventBus
@@ -215,11 +216,13 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001
         logger.exception("initial_discovery_failed")
     logger.info("app_started host=%s port=%s", settings.host, settings.port)
+    loop = asyncio.get_running_loop()
+    restore_signals = on_exit_signal(lambda: loop.call_soon_threadsafe(events.close))
     try:
         yield
     finally:
+        restore_signals()
         await poller.stop()
-        await drain_pending_refreshes()
         discovery.mdns.stop()
         await client.aclose()
         logger.info("app_stopped")

@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.bluos.client import BluOSClient
-from app.config import Settings
+from app.config import Settings, get_settings
+from app.discovery.lsdp import LSDPDevice
 from app.discovery.service import DiscoveredEndpoint, DiscoveryService, DiscoverySnapshot
 from app.models import PlayerStatus
 
@@ -288,4 +289,109 @@ async def test_grace_preserves_ip_after_drop(monkeypatch: pytest.MonkeyPatch) ->
     assert device_id not in service.snapshot.endpoints_by_id
     assert service.is_known_id(device_id)
     assert service.resolve_endpoint(device_id) == "192.168.1.55:11000"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_empty_fleet_get_devices_uses_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bluos.client import BluOSClient
+    from app.discovery.service import DiscoveryService
+
+    get_settings.cache_clear()
+    settings = Settings(
+        allow_non_private_ips=True,
+        discovery_cache_ttl=300,
+        empty_fleet_rediscovery_seconds=60,
+        discovery_method="mdns",
+    )
+    client = BluOSClient(settings)
+    service = DiscoveryService(settings, client)
+    calls = {"n": 0}
+
+    async def fake_discover(self: DiscoveryService):
+        calls["n"] += 1
+        return [], "mdns"
+
+    monkeypatch.setattr(DiscoveryService, "_discover_endpoints", fake_discover)
+    first = await service.refresh()
+    assert first.devices == []
+    assert calls["n"] == 1
+    second = await service.get_devices()
+    assert second.discovered_at == first.discovered_at
+    assert calls["n"] == 1  # cached empty
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_discovery_cache_grace_and_enrich_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bluos.client import BluOSClient
+
+    settings = Settings(
+        allow_non_private_ips=True,
+        discovery_cache_ttl=60,
+        discovery_method="both",
+    )
+    client = BluOSClient(settings)
+    service = DiscoveryService(settings, client)
+
+    async def endpoints(self: DiscoveryService):
+        return [DiscoveredEndpoint(ip="192.168.1.20", node_id="n1")], "mdns"
+
+    async def boom(*_a, **_k):
+        raise RuntimeError("enrich fail")
+
+    monkeypatch.setattr(DiscoveryService, "_discover_endpoints", endpoints)
+    client.get_player_status = AsyncMock(side_effect=boom)  # type: ignore[method-assign]
+
+    snap = await service.refresh()
+    # Failed SyncStatus probes are dropped (not kept as error players).
+    assert snap.devices == []
+    assert snap.discovered_at is not None
+    # Empty fleets cache for empty_fleet_rediscovery_seconds (avoid discovery storms).
+    cached = await service.get_devices()
+    assert cached.devices == []
+    assert cached.discovered_at == snap.discovered_at
+
+    # update_device appends unknown player
+    extra = PlayerStatus(id="extra", ip="192.168.1.30", name="X", status="online")
+    await service.update_device(extra)
+    assert any(d.id == "extra" for d in service.snapshot.devices)
+
+    assert service.get_device("missing") is None
+    assert service.is_in_grace("extra") is False
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_discover_endpoints_mdns_lsdp_merge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bluos.client import BluOSClient
+
+    settings = Settings(allow_non_private_ips=False, discovery_method="both")
+    client = BluOSClient(settings)
+    service = DiscoveryService(settings, client)
+
+    monkeypatch.setattr(
+        "app.discovery.service.MDNSDiscovery.discover",
+        lambda self: ["192.168.1.10", "8.8.8.8"],
+    )
+    monkeypatch.setattr(
+        "app.discovery.service.LSDPDiscovery.discover",
+        lambda self: [
+            LSDPDevice(node_id="n10", ip="192.168.1.10", class_id=1),
+            LSDPDevice(node_id="n11", ip="192.168.1.11", class_id=1),
+        ],
+    )
+
+    endpoints, method = await service._discover_endpoints()
+    ips = {e.ip for e in endpoints}
+    assert ips == {"192.168.1.10", "192.168.1.11"}
+    assert "mdns" in method and "lsdp" in method
+    # node id merged onto mdns-first endpoint
+    assert next(e for e in endpoints if e.ip == "192.168.1.10").node_id == "n10"
     await client.aclose()

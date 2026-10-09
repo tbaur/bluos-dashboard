@@ -10,6 +10,7 @@ from fastapi import APIRouter, Request, Response
 from app import __version__
 from app.api.common import StateDep
 from app.api.errors import AppError
+from app.auth import SESSION_COOKIE, session_cookie_value
 from app.models import HealthResponse, VersionInfo
 
 router = APIRouter()
@@ -57,11 +58,10 @@ async def version() -> VersionInfo:
 
 @router.post("/session", status_code=204)
 async def open_session(request: Request) -> Response:
-    """Trade a bearer token for an HttpOnly cookie.
+    """Trade a bearer token for an HttpOnly session cookie.
 
     The cookie is for a dashboard reached from a network that cannot reach the
-    players. On the player LAN the players are already open. The token is not
-    written into the page bundle.
+    players. On the player LAN the players are already open.
     """
     header = request.headers.get("authorization", "")
     token = header[7:].strip() if header.lower().startswith("bearer ") else ""
@@ -75,8 +75,8 @@ async def open_session(request: Request) -> Response:
         raise AppError(401, "unauthorized", "Valid API token required")
     response = Response(status_code=204)
     response.set_cookie(
-        "bsd_session",
-        token,
+        SESSION_COOKIE,
+        session_cookie_value(expected).decode("ascii"),
         httponly=True,
         samesite="strict",
         secure=request.url.scheme == "https",

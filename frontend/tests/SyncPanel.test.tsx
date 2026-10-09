@@ -167,4 +167,83 @@ describe('SyncPanel', () => {
     expect(screen.queryByRole('button', { name: /Add rooms/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ungroup all' })).toBeInTheDocument();
   });
+
+  it('links a follower from the builder and waits for BluOS to show it', async () => {
+    render(<SyncPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Bravo' }));
+
+    const state = useFleetStore.getState();
+    await waitFor(() => expect(syncAdd).toHaveBeenCalledWith('a', 'b'));
+    await waitFor(() =>
+      expect(state.reloadStatus).toHaveBeenCalledWith({
+        ensureLink: { primaryId: 'a', slaveId: 'b' },
+      }),
+    );
+    expect(state.setSync).toHaveBeenCalledWith({
+      groups: [expect.objectContaining({ primary_id: 'a', slave_ids: ['b'] })],
+      standalone_ids: ['c'],
+    });
+    expect(state.patchDevice).toHaveBeenCalledWith('b', {
+      sync_role: 'synced',
+      master: '10.0.0.1:11000',
+    });
+    expect(state.holdSync).toHaveBeenCalled();
+  });
+
+  describe('with a group', () => {
+    beforeEach(() => {
+      useFleetStore.setState({
+        sync: {
+          groups: [
+            {
+              primary_id: 'a',
+              primary_name: 'Alpha',
+              primary_ip: '10.0.0.1',
+              primary_endpoint: '10.0.0.1:11000',
+              group: '',
+              slave_ids: ['b', 'c'],
+              slave_names: ['Bravo', 'Charlie'],
+            },
+          ],
+          standalone_ids: [],
+        },
+      });
+    });
+
+    it('removes one follower and keeps the rest of the group', async () => {
+      render(<SyncPanel />);
+      fireEvent.click(screen.getByTitle('Remove Bravo'));
+      await waitFor(() => expect(syncRemove).toHaveBeenCalledWith('a', 'b'));
+      expect(useFleetStore.getState().setSync).toHaveBeenCalledWith({
+        groups: [expect.objectContaining({ slave_ids: ['c'], slave_names: ['Charlie'] })],
+        standalone_ids: ['b'],
+      });
+    });
+
+    it('ungroups every follower of one group', async () => {
+      render(<SyncPanel />);
+      fireEvent.click(screen.getByRole('button', { name: 'Ungroup' }));
+      await waitFor(() => expect(syncRemove).toHaveBeenCalledTimes(2));
+      expect(useFleetStore.getState().setSync).toHaveBeenCalledWith({
+        groups: [],
+        standalone_ids: ['a', 'b', 'c'],
+      });
+    });
+
+    it('ungroups everything after confirming and reports partial failure', async () => {
+      syncBreak.mockResolvedValue({ action: 'sync_break', succeeded: 1, failed: 1, results: [] });
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+      render(<SyncPanel />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Ungroup all' }));
+      expect(syncBreak).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Ungroup all' }));
+      await waitFor(() =>
+        expect(useFleetStore.getState().setToast).toHaveBeenCalledWith('Ungrouped 1; 1 failed'),
+      );
+      confirm.mockRestore();
+    });
+  });
 });

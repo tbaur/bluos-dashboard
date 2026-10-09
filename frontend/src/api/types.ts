@@ -249,6 +249,14 @@ export interface FleetActionResponse {
   results: FleetActionResult[];
 }
 
+export interface FleetVolumeResponse extends Omit<FleetActionResponse, 'action'> {
+  level: number;
+}
+
+export interface SyncEnableResponse extends FleetActionResponse {
+  primary_id: string;
+}
+
 export interface ApiErrorBody {
   error: string;
   message: string;

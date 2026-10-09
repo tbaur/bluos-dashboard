@@ -36,3 +36,13 @@ async def test_acquire_returns_false_during_cooldown() -> None:
     assert await limiter.acquire("client-a") is True
     assert await limiter.acquire("client-a") is False
     assert await limiter.acquire("client-b") is True
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_prunes_when_over_cap() -> None:
+    from app.bluos.client import RateLimiter
+
+    limiter = RateLimiter(0.001, max_keys=4)
+    for i in range(8):
+        await limiter.wait(f"k{i}")
+    assert len(limiter._last) <= 4

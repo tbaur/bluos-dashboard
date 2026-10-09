@@ -11,14 +11,14 @@ from urllib.parse import unquote_to_bytes
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.auth import SESSION_COOKIE, session_cookie_value
 from app.bluos.rate_limit import RateLimiter
 from app.config import get_settings
 from app.logging import request_id_var
 
 logger = logging.getLogger(__name__)
 
-# Album art is served from BluOS players on the LAN (http://<device>:11000/...).
-# CSP cannot express RFC1918 CIDRs, so http: is required for single-process deploys.
+# Album art is proxied through /api/v1/devices/{id}/art, so images stay same-origin.
 _DEFAULT_CSP = (
     "default-src 'self'; "
     "connect-src 'self'; "
@@ -45,6 +45,8 @@ _SECURITY_HEADERS = {
 # Cheap in-memory GETs (/devices, /sync) overlap on UI mount / Strict Mode;
 # 429ing them surfaces "Too many requests" while an earlier load still succeeds.
 _EXPENSIVE_GET_PATHS = frozenset({"/api/v1/fleet/upgrades"})
+# Methods a cookie may use without the X-BSD-Request header (no side effects).
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _AUTH_EXEMPT_PATHS = frozenset(
     {
         "/api/v1/healthz",
@@ -70,6 +72,7 @@ class RequestContextMiddleware:
         # Bytes, not str: headers arrive as bytes and hmac.compare_digest raises
         # TypeError on str with non-ASCII characters.
         self._api_token = (settings.api_token or "").strip().encode("utf-8")
+        self._session_cookie = session_cookie_value(self._api_token) if self._api_token else b""
         self._trusted_proxies = settings.trusted_proxy_set()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -82,7 +85,7 @@ class RequestContextMiddleware:
         peer = (scope.get("client") or ("unknown", 0))[0] or "unknown"
 
         if self._api_token and path.startswith("/api/v1/") and path not in _AUTH_EXEMPT_PATHS:
-            if not _authorized(scope, self._api_token):
+            if not _authorized(scope, self._api_token, self._session_cookie):
                 await _send_json(
                     send,
                     401,
@@ -179,20 +182,6 @@ def _client_ip(scope: Scope, peer: str, trusted_proxies: set[str]) -> str:
     return first or peer
 
 
-def _query_token(query_string: bytes) -> bytes | None:
-    """Read token= from a raw query string without ever decoding it to text.
-
-    parse_qs decodes a bytes query string as ASCII on Python below 3.13 and
-    raises UnicodeDecodeError on anything else, which would make a non-ASCII
-    token a 500 rather than a 401. Percent-decoding stays in the bytes domain.
-    """
-    for field in query_string.split(b"&"):
-        name, sep, value = field.partition(b"=")
-        if sep and name == b"token":
-            return unquote_to_bytes(value.replace(b"+", b" "))
-    return None
-
-
 def _cookie_value(scope: Scope, name: bytes) -> bytes | None:
     raw = _header_raw(scope, b"cookie")
     if not raw:
@@ -204,27 +193,21 @@ def _cookie_value(scope: Scope, name: bytes) -> bytes | None:
     return None
 
 
-def _authorized(scope: Scope, expected: bytes) -> bool:
-    """Compare tokens as bytes so a non-ASCII credential cannot raise."""
+def _authorized(scope: Scope, token: bytes, session_cookie: bytes) -> bool:
+    """Compare credentials as bytes so a non-ASCII value cannot raise."""
     auth = _header_raw(scope, b"authorization")
     if auth and auth[:7].lower() == b"bearer ":
-        if hmac.compare_digest(auth[7:].strip(), expected):
+        if hmac.compare_digest(auth[7:].strip(), token):
             return True
     header_token = _header_raw(scope, b"x-api-token")
-    if header_token and hmac.compare_digest(header_token.strip(), expected):
+    if header_token and hmac.compare_digest(header_token.strip(), token):
         return True
-    cookie = _cookie_value(scope, b"bsd_session")
-    if cookie is not None and hmac.compare_digest(cookie, expected):
+    cookie = _cookie_value(scope, SESSION_COOKIE.encode("ascii"))
+    if cookie is not None and hmac.compare_digest(cookie, session_cookie):
         # A foreign site can send the cookie. It cannot set this header.
-        if scope.get("method") == "POST":
+        if scope.get("method") not in _SAFE_METHODS:
             return _header_raw(scope, b"x-bsd-request") == b"1"
         return True
-    # Older EventSource clients may still pass ?token= on SSE.
-    path = scope.get("path", "")
-    if path == "/api/v1/events":
-        candidate = _query_token(scope.get("query_string", b"") or b"")
-        if candidate is not None and hmac.compare_digest(candidate, expected):
-            return True
     return False
 
 
