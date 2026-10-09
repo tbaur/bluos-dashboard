@@ -9,16 +9,16 @@ LAN dashboard for every BluOS player on your network — Nodes, Pulse, NAD CI zo
 
 Related CLI: [bluos-controller](https://github.com/tbaur/bluos-controller). This dashboard is self-contained (no runtime dependency on the CLI).
 
-![House remote with now playing, room chips, and playback controls](docs/images/now-playing.png)
+![House remote on one stream, with the speaker count and playback controls](docs/images/now-playing.png)
 
 ## Features
 
-- **House remote** — artwork, title/album/source, rooms on the stream, live seek, skip, shuffle/repeat, mute, and stop all. Space or K play/pause, arrows or J/L skip, M mute. Skip keeps now-playing painted (no empty flash). When nothing is playing, Mute and Stop all stay on the bottom row (All quiet does not collapse the card). When rooms are on different sources, pick which stream the remote drives.
+- **House remote** — one focused stream: artwork, title, album, source, live seek, skip, shuffle, repeat, mute, and stop all. The speaker count (or the room name, when one player has the stream) opens a dialog of every player on it, with role and volume. Lead is the BluOS group primary, Synced is a follower, and Direct is a player streaming that audio on its own. The list scrolls. Up to three other streams sit under Also playing; further streams open from the count. Choosing one keeps the house panel on those players while you control them. Play, skip, and seek command the sync lead, or that player when it is alone. Direct players are not commanded with the lead. Space or K play/pause, arrows or J/L skip, M mute. Skip keeps now-playing painted. When nothing is playing, the remote reads All quiet, and Mute and Stop all stay on the bottom row.
 - **Fleet** — every player, live now-playing, A–Z or clustered by sync group (auto-switches to Sync when a group forms).
 - **Volume** — **Bluesound** (bluesound.com Nodes/Pulse) and **NAD CI S2** are separate sliders (different amp scales). Bluesound has 20 / 48 / 60 chips; CI S2 has 42 / 50 / 60 / 70. Other brands (NAD C658, …) use the player row only.
 - **Multi-room** — create groups, add/remove followers, group all free rooms under a lead, ungroup one set or all. Break-all also clears orphans whose primary left the network.
 - **Per player** — queue (loaded on open, optimistic reorder), inputs / presets / Bluetooth / settings when Advanced is opened, diagnostics (uptime from the device web UI), 12-hour presence bar and last drop, reboot. Leaving the page aborts diagnostics and upgrade scrapes so Skip and queue moves are not starved by the browser’s six connections per host.
-- **House page** — same remote, poller drop history for **this dashboard process** (24h, not persisted), firmware inventory + upgrade check, reboot all, ungroup all.
+- **House page** — the same remote, then Health (poller drop history for this dashboard process, 24h, not persisted), device firmware and an upgrade check, break all groups, rescan, and reboot all.
 - **Discovery** — at process start, on **Rescan**, and on the poller clock when the fleet is empty or the discovery cache expires. Page load and house mute/volume read the live snapshot (no mDNS). mDNS browses `_musc` and `_musp` (CI secondary zones as `ip:port`).
 - **Live updates** — per-player BluOS Status etag long-poll (holds until skip, volume, track, or grouping changes; `/SyncStatus` when `<syncStat>` moves) plus SSE. Seek interpolates between snaps. REST fallback if the stream drops.
 
@@ -55,4 +55,6 @@ Full setup and checks: [CONTRIBUTING.md](CONTRIBUTING.md). Two-terminal start: [
 
 ## License
 
-Copyright 2026 tbaur. Apache License 2.0. See [LICENSE](LICENSE).
+Copyright 2026 tbaur
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) file for details.

@@ -184,7 +184,7 @@ describe('FleetBar house remote art', () => {
     expect(art).toHaveAttribute('href', '/player/1');
   });
 
-  it('hides a single house stream when multiple sources are playing, and lets you pick one', () => {
+  it('keeps the focused stream visible and switches it from Also playing', () => {
     useFleetStore.setState({
       devices: [
         player({
@@ -208,15 +208,15 @@ describe('FleetBar house remote art', () => {
     });
 
     renderBar();
-    expect(screen.getByRole('tablist', { name: 'House sources' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Quiet/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: 'Also playing' })).toBeInTheDocument();
+    expect(screen.getByText('1 other stream')).toBeInTheDocument();
+    expect(screen.getByText('Quiet — B').closest('p')).toHaveAttribute('title', 'Quiet — B');
     const quietArt = screen.getByRole('link', { name: /Now playing artwork — open Quiet/ });
     expect(quietArt.querySelector('img')).toHaveAttribute(
       'src',
       playerArtSrc('2', 'http://art/quiet.jpg'),
     );
-    fireEvent.click(screen.getByRole('tab', { name: /Party/ }));
-    expect(screen.getByRole('tab', { name: /Party/ })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /Party/ }));
     const partyArt = screen.getByRole('link', { name: /Now playing artwork — open Party/ });
     expect(partyArt.querySelector('img')).toHaveAttribute(
       'src',
@@ -248,7 +248,8 @@ describe('FleetBar house remote art', () => {
 
     const { container } = renderBar();
     const bar = container.querySelector('.fleet-bar');
-    expect(bar?.firstElementChild).toHaveClass('house-remote');
+    expect(bar?.firstElementChild).toHaveClass('house-remote-stack');
+    expect(bar?.querySelector('.house-remote')).toBeInTheDocument();
     expect(bar?.lastElementChild).toHaveClass('fleet-bar-rail');
     expect(screen.getByRole('heading', { name: 'Bluesound' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'NAD CI S2' })).toBeInTheDocument();

@@ -1,12 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { ChangeEvent, Ref } from 'react';
 import { formatClock } from '@/lib/clock';
-import {
-  clampPlayback,
-  playbackPosition,
-  playbackProgress,
-  shouldSnapPlayback,
-} from '@/lib/playbackClock';
+import { usePlaybackPaint } from '@/hooks/usePlaybackPaint';
+import { clampPlayback, playbackProgress } from '@/lib/playbackClock';
 
 type SeekBarProps = {
   initialSecs: number;
@@ -96,13 +92,7 @@ export function SeekBar({
   const fillRef = useRef<HTMLDivElement>(null);
   const timeRef = useRef<HTMLSpanElement>(null);
   const rangeRef = useRef<HTMLInputElement>(null);
-  const originRef = useRef<{ secs: number; at: number | null }>({
-    secs: initialSecs,
-    at: null,
-  });
-  const lastRef = useRef(initialSecs);
   const draggingRef = useRef(false);
-  const playingRef = useRef(playing);
   const totlenRef = useRef(totlen);
   const onSeekRef = useRef(onSeek);
   const commitTimer = useRef<number | undefined>(undefined);
@@ -111,68 +101,23 @@ export function SeekBar({
 
   useLayoutEffect(() => {
     totlenRef.current = totlen;
-    playingRef.current = playing;
     onSeekRef.current = onSeek;
-  }, [totlen, playing, onSeek]);
+  });
 
-  useLayoutEffect(() => {
-    const now = performance.now();
-    const predicted = playbackPosition(
-      originRef.current.secs,
-      originRef.current.at ?? now,
-      now,
-      originRef.current.at !== null && playingRef.current && !draggingRef.current,
-    );
-    if (originRef.current.at === null || shouldSnapPlayback(predicted, initialSecs)) {
-      originRef.current = { secs: initialSecs, at: now };
-      lastRef.current = paint(
+  const playback = usePlaybackPaint(
+    initialSecs,
+    playing,
+    (raw) =>
+      paint(
         fillRef.current,
         timeRef.current,
         rangeRef.current,
         draggingRef.current,
-        initialSecs,
+        raw,
         totlenRef.current,
-      );
-    }
-  }, [initialSecs]);
-
-  useEffect(() => {
-    if (!playing) {
-      originRef.current.secs = lastRef.current;
-      originRef.current.at = performance.now();
-      lastRef.current = paint(
-        fillRef.current,
-        timeRef.current,
-        rangeRef.current,
-        false,
-        lastRef.current,
-        totlenRef.current,
-      );
-      return undefined;
-    }
-    originRef.current = { secs: lastRef.current, at: performance.now() };
-    let frame = 0;
-    const tick = (now: number) => {
-      if (!draggingRef.current) {
-        const originAt = originRef.current.at ?? now;
-        lastRef.current = paint(
-          fillRef.current,
-          timeRef.current,
-          rangeRef.current,
-          false,
-          playbackPosition(originRef.current.secs, originAt, now, true),
-          totlenRef.current,
-        );
-      }
-      frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      originRef.current.secs = lastRef.current;
-      originRef.current.at = performance.now();
-    };
-  }, [playing]);
+      ),
+    draggingRef,
+  );
 
   useEffect(
     () => () => {
@@ -187,19 +132,12 @@ export function SeekBar({
 
   const onPointerUp = useCallback(() => {
     draggingRef.current = false;
-    originRef.current = { secs: lastRef.current, at: performance.now() };
-  }, []);
+    playback.release();
+  }, [playback]);
 
   const onChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const next = Number(event.target.value);
-    lastRef.current = paint(
-      fillRef.current,
-      timeRef.current,
-      rangeRef.current,
-      true,
-      next,
-      totlenRef.current,
-    );
+    playback.adopt(next);
     pending.current = Math.round(next);
     if (commitTimer.current) window.clearTimeout(commitTimer.current);
     commitTimer.current = window.setTimeout(() => {
@@ -208,7 +146,7 @@ export function SeekBar({
       pending.current = null;
       if (seconds !== null) onSeekRef.current?.(seconds);
     }, 80);
-  }, []);
+  }, [playback]);
 
   return (
     <SeekTrack

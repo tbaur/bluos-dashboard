@@ -68,12 +68,10 @@ Vite proxies `/api` → the API. CORS defaults allow both `http://127.0.0.1:8765
 | `device_not_found` on control | Player dropped off discovery (grace expired) | Rescan network; check `BSD_DISCOVERED_GRACE_TTL` |
 | Rooms stuck “synced” / reconnecting after primary power-off | Orphan group (primary offline) | **Ungroup** / **Ungroup all** / House **Break all groups** — backend reparents onto a live donor then removes |
 | Add rooms disabled on “Offline primary” | Expected — membership changes need a live primary | Ungroup orphans, then form a new group under an online lead |
-| First mute/volume after idle feels slow | Old process still re-browses the LAN on house control | Restart this release — house actions use the live snapshot and drop the held Status poll first |
-| One player stuck offline | Circuit slow-poll after consecutive long-poll/connect failures | Power-cycle player; wait for `BSD_CIRCUIT_SLOW_POLL_SECONDS` |
+| One player stuck offline | Circuit slow-poll after consecutive long-poll/connect failures | Power-cycle the player; wait for `BSD_CIRCUIT_SLOW_POLL_SECONDS` |
 | House Health empty after restart | Drop history is process-local (not on disk) | Expected — first online in this process starts the 12h presence bar |
-| `Request timed out` on Skip or queue Down from a player page | Browser allows six HTTP/1.1 connections per host; diagnose/upgrade/SSE were holding slots | Leave the page (scrapes abort). Current UI loads queue on open and Advanced extras lazily |
+| `Request timed out` on Skip or a queue move from a player page | The browser allows six HTTP/1.1 connections per host. Diagnostics, upgrade checks, and SSE can hold those slots | Leave the page; those scrapes abort. The queue loads when the page opens. Inputs, presets, and settings load when Advanced is opened |
 | Player still “online” after power-off | Hung TCP on a Status long-poll | Connect failures fail in `BSD_DEVICE_HTTP_TIMEOUT` (~3s). A stuck read can wait until `BSD_STATUS_LONG_POLL_SECONDS` + slack |
-| `:11000` Status/SyncStatus every 3s | Old dashboard process (pre-etag long-poll) | Restart after this release — online players long-poll `/Status` |
 | Bluetooth section missing | Model/probe reports unsupported | Normal for many CI zones and players without BT |
 | SSE reconnecting / stale UI | Proxy buffering, backend restart, or SSE backpressure | Check backend logs for `sse_drop_subscriber`; UI uses exponential reconnect, then after 8 failures shows **Offline**, keeps REST polling every 5s, and retries SSE every 60s until live again (empty fleet uses `BSD_EMPTY_FLEET_REDISCOVERY_SECONDS` cache — not a full discovery each poll) |
 | `make run` says port in use | Something already listens on the API/UI port | Stop that process, or `BSD_FORCE_FREE_PORTS=1 make run` |
