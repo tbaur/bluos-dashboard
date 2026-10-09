@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.0](https://github.com/tbaur/bluos-dashboard/compare/v1.1.2...v1.2.0) (2026-10-09)
+
+
+### Features
+
+* focus the house remote on one stream ([38c6b8b](https://github.com/tbaur/bluos-dashboard/commit/38c6b8b330d4363479aec5ba1409a41df78b06a8))
+
 ## [1.1.2](https://github.com/tbaur/bluos-dashboard/compare/v1.1.1...v1.1.2) (2026-10-08)
 
 
