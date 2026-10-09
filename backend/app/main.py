@@ -13,7 +13,6 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api.common import drain_pending_refreshes
 from app.api.errors import AppError
 from app.api.routes import router
 from app.bluos.client import BluOSClient
@@ -224,7 +223,6 @@ async def lifespan(app: FastAPI):
     finally:
         restore_signals()
         await poller.stop()
-        await drain_pending_refreshes()
         discovery.mdns.stop()
         await client.aclose()
         logger.info("app_stopped")

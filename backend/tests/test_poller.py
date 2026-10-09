@@ -610,3 +610,83 @@ async def test_stale_fleet_rediscovers_on_poller_not_on_request(
     await poller._maybe_rediscover()
     assert called["n"] == 1
     await client.aclose()
+
+
+def _refresh_poller(settings: Settings) -> tuple[StatusPoller, BluOSClient]:
+    client = BluOSClient(settings)
+    return StatusPoller(settings, DiscoveryService(settings, client), client, EventBus()), client
+
+
+@pytest.mark.asyncio
+async def test_schedule_refresh_runs_one_refresh_per_player_at_a_time(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    poller, client = _refresh_poller(settings)
+    release = asyncio.Event()
+    calls: list[str] = []
+
+    async def refresh_one(device_id: str) -> None:
+        calls.append(device_id)
+        await release.wait()
+
+    monkeypatch.setattr(poller, "refresh_one", refresh_one)
+    poller.schedule_refresh("p1")
+    poller.schedule_refresh("p1")
+    poller.schedule_refresh("p2")
+    await asyncio.sleep(0)
+    assert calls == ["p1", "p2"]
+
+    release.set()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    poller.schedule_refresh("p1")
+    await asyncio.sleep(0)
+    assert calls == ["p1", "p2", "p1"]
+    await poller.stop()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_refreshes_in_flight(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    poller, client = _refresh_poller(settings)
+    started = asyncio.Event()
+
+    async def refresh_one(device_id: str) -> None:
+        started.set()
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(poller, "refresh_one", refresh_one)
+    poller.schedule_refresh("p1")
+    await started.wait()
+    task = poller._refreshes["p1"]
+
+    await poller.stop()
+
+    assert task.cancelled()
+    assert poller._refreshes == {}
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_failed_refresh_is_logged_and_forgotten(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    poller, client = _refresh_poller(settings)
+
+    async def refresh_one(device_id: str) -> None:
+        raise RuntimeError("player went away")
+
+    monkeypatch.setattr(poller, "refresh_one", refresh_one)
+    with caplog.at_level("WARNING"):
+        poller.schedule_refresh("p1")
+        task = poller._refreshes["p1"]
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.sleep(0)
+
+    assert poller._refreshes == {}
+    assert any(record.message == "refresh_one_failed" for record in caplog.records)
+    await client.aclose()

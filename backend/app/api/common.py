@@ -30,8 +30,6 @@ logger = logging.getLogger(__name__)
 StateDep = Annotated[AppState, Depends(get_state)]
 ControlOp = Callable[[str], Awaitable[bool]]
 
-_pending_refresh: dict[str, asyncio.Task[object]] = {}
-
 
 def endpoint_host(endpoint: str, *, default_port: int = DEFAULT_BLUOS_PORT) -> str | None:
     host, _port = parse_endpoint(endpoint, default_port=default_port)
@@ -161,46 +159,6 @@ def sync_donor_endpoints(state: AppState, *exclude: str) -> list[str]:
     ]
 
 
-def schedule_refresh(state: AppState, device_id: str) -> None:
-    """Coalesce fire-and-forget status refreshes per device."""
-    existing = _pending_refresh.get(device_id)
-    if existing is not None and not existing.done():
-        return
-
-    task: asyncio.Task[object] = asyncio.create_task(
-        state.poller.refresh_one(device_id),
-        name=f"refresh-{device_id}",
-    )
-    _pending_refresh[device_id] = task
-
-    def _done(done: asyncio.Task[object]) -> None:
-        current = _pending_refresh.get(device_id)
-        if current is done:
-            _pending_refresh.pop(device_id, None)
-        try:
-            exc = done.exception()
-        except asyncio.CancelledError:
-            return
-        if exc is not None:
-            logger.warning(
-                "refresh_one_failed",
-                extra={"device_id": device_id},
-                exc_info=exc,
-            )
-
-    task.add_done_callback(_done)
-
-
-async def drain_pending_refreshes() -> None:
-    """Cancel and await in-flight refreshes so shutdown leaves no live tasks."""
-    tasks = [task for task in _pending_refresh.values() if not task.done()]
-    _pending_refresh.clear()
-    for task in tasks:
-        task.cancel()
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-
 async def begin_control(state: AppState, device_ids: Sequence[str]) -> None:
     """Free held Status long-polls before a command hits the same players."""
     await state.poller.interrupt(device_ids)
@@ -230,7 +188,7 @@ async def run_control(state: AppState, device_id: str, op_name: str, coro: Contr
             },
         )
         raise AppError(502, "bluos_control_failed", f"BluOS {op_name} failed")
-    schedule_refresh(state, device_id)
+    state.poller.schedule_refresh(device_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -260,7 +218,7 @@ async def fleet_action(
         )
         ok = await run(endpoint)
         if ok:
-            schedule_refresh(state, device_id)
+            state.poller.schedule_refresh(device_id)
         else:
             failure = take_control_result()
             kind = failure.kind if failure else "failed"

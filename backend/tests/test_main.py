@@ -201,6 +201,39 @@ async def test_events_stream_ends_when_the_bus_closes(
     assert sent[-1].get("more_body") is False
 
 
+@pytest.mark.asyncio
+async def test_events_stream_forwards_updates_then_keepalives(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    app, client, _poller = await _seeded_app(settings, monkeypatch)
+    events: EventBus = app.state.app_state.events
+    disconnected = asyncio.Event()
+    sent: list[dict] = []
+
+    async def receive() -> dict:
+        await disconnected.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+        body = message.get("body", b"")
+        if b'"type": "fleet"' in body:
+            await events.publish("device", {"id": "player-kitchen"})
+        elif b": keepalive" in body:
+            disconnected.set()
+
+    try:
+        await asyncio.wait_for(app(_events_scope(), receive, send), timeout=2.0)
+    finally:
+        await client.aclose()
+
+    body = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
+    assert body.index(b'"type": "device"') < body.index(b": keepalive")
+    assert events.subscriber_count == 0
+
+
 def _events_scope() -> dict:
     return {
         "type": "http",

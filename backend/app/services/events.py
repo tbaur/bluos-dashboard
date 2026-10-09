@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,22 @@ class EventBus:
             if self._closed:
                 queue.put_nowait(None)
         return queue
+
+    async def subscribe_with_snapshot(
+        self, event_type: str, snapshot: Callable[[], Any]
+    ) -> tuple[EventQueue, str | None]:
+        """Subscribe and encode ``snapshot()`` as one step under the publish lock.
+
+        No event can land between the two, so a stream never replays an update
+        that is older than its snapshot. The payload is ``None`` once the bus has
+        closed. Call ``unsubscribe`` with the queue either way.
+        """
+        queue: EventQueue = asyncio.Queue(maxsize=self._max_queue_size)
+        async with self._lock:
+            self._subscribers.add(queue)
+            if self._closed:
+                return queue, None
+            return queue, _encode(event_type, snapshot())
 
     @property
     def subscriber_count(self) -> int:
@@ -54,9 +71,7 @@ class EventBus:
             # After close, a drop-oldest could evict the stop marker.
             if self._closed:
                 return
-            payload = json.dumps({"type": event_type, "data": data}, default=str)
-            subscribers = list(self._subscribers)
-            self._fanout(subscribers, payload)
+            self._fanout(list(self._subscribers), _encode(event_type, data))
 
     def _fanout(self, subscribers: list[EventQueue], payload: str) -> None:
         for queue in subscribers:
@@ -69,6 +84,10 @@ class EventBus:
                 len(subscribers),
                 self.dropped_events,
             )
+
+
+def _encode(event_type: str, data: Any) -> str:
+    return json.dumps({"type": event_type, "data": data}, default=str)
 
 
 def _put_dropping_oldest(queue: EventQueue, item: str | None) -> bool:
