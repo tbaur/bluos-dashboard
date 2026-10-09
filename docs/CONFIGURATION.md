@@ -108,7 +108,6 @@ Drop history (`GET /api/v1/fleet/health`, House page Health, player 12-hour pres
 - **Single-process deploy:** `make build`, then from `backend/` set `BSD_STATIC_DIR=../frontend/dist` (path is relative to the uvicorn working directory) — see [RUNBOOK.md](RUNBOOK.md).
 - **Discovery trouble:** try `BSD_DISCOVERY_METHOD=lsdp` or increase `BSD_DISCOVERY_TIMEOUT`.
 - **Slow VPN/firewall:** increase `BSD_DEVICE_HTTP_TIMEOUT` (connect/control) or `BSD_STATUS_LONG_POLL_SECONDS` (Status hold).
-- **Chatty players / 3s Status polls:** you are on a pre-1.0 process — restart so the etag long-poller is running.
 
 ## See also
 
