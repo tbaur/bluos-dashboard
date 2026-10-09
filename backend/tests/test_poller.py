@@ -670,31 +670,67 @@ async def test_stop_cancels_refreshes_in_flight(
 
 
 @pytest.mark.asyncio
-async def test_syncstat_change_reads_the_player_again_once_settled(
+async def test_syncstat_change_reads_the_player_again_after_the_last_change(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A player reports a new syncStat before its /SyncStatus shows the new group."""
+    """A player reports a new syncStat before its /SyncStatus shows the new group,
+    and can report more than one while it settles. Read once, after the last."""
     poller, client = _refresh_poller(settings)
-    monkeypatch.setattr("app.services.poller.SYNC_SETTLE_SECONDS", 0)
-    confirmed: list[str] = []
+    settle = 0.3
+    monkeypatch.setattr("app.services.poller.SYNC_SETTLE_SECONDS", settle)
+    events: list[str] = []
+
+    async def interrupt(device_ids: list[str]) -> None:
+        events.append(f"interrupt:{','.join(device_ids)}")
 
     async def refresh_one(device_id: str) -> None:
-        confirmed.append(device_id)
+        events.append(f"read:{device_id}")
 
+    monkeypatch.setattr(poller, "interrupt", interrupt)
     monkeypatch.setattr(poller, "refresh_one", refresh_one)
     player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    remember = poller._remember_tags
 
+    remember("p1", PlayerSnapshot(player, sync_stat="own-7", sync_read=True))
+    remember("p1", PlayerSnapshot(player, sync_stat="own-7"))
+    await asyncio.sleep(settle + 0.1)
+    assert events == []
+
+    # Joining a group: the follower carries its lead's syncStat, then it moves again.
+    remember("p1", PlayerSnapshot(player, sync_stat="lead-55", sync_read=True))
+    await asyncio.sleep(settle / 2)
+    remember("p1", PlayerSnapshot(player, sync_stat="lead-56", sync_read=True))
+    # Past the first change's deadline, but not the second's.
+    await asyncio.sleep(settle * 0.75)
+    assert events == []
+    await asyncio.sleep(settle)
+    assert events == ["interrupt:p1", "read:p1"]
+    await poller.stop()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_change_seen_by_the_confirm_read_schedules_one_more(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    poller, client = _refresh_poller(settings)
+    monkeypatch.setattr("app.services.poller.SYNC_SETTLE_SECONDS", 0.05)
+    player = PlayerStatus(id="p1", ip="192.168.1.20", name="K", status="online")
+    reads: list[str] = []
+
+    async def refresh_one(device_id: str) -> None:
+        reads.append(device_id)
+        # The first confirm read finds the group still moving (56 -> 57); the second does not.
+        poller._remember_tags(
+            device_id, PlayerSnapshot(player, sync_stat="lead-57", sync_read=True)
+        )
+
+    monkeypatch.setattr(poller, "refresh_one", refresh_one)
     poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="own-7", sync_read=True))
-    poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="own-7"))
-    await asyncio.sleep(0)
-    assert confirmed == []
-
-    # Joining a group: the follower now carries its lead's syncStat.
-    poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="lead-55", sync_read=True))
     poller._remember_tags("p1", PlayerSnapshot(player, sync_stat="lead-56", sync_read=True))
-    for _ in range(3):
-        await asyncio.sleep(0)
-    assert confirmed == ["p1"]
+    await asyncio.sleep(0.4)
+    assert reads == ["p1", "p1"]
+    assert poller._confirms == {}
     await poller.stop()
     await client.aclose()
 
