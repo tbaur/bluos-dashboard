@@ -197,31 +197,37 @@ function SyncGroupCard(props: SyncGroupCardProps) {
         </div>
       </div>
 
-      <div className="sync-chain" role="list">
-        <span className="sync-chip sync-chip-primary" role="listitem">
-          {group.primary_name}
-        </span>
-        {followerCount > 0 ? (
-          <span className="sync-arrow" aria-hidden="true">
-            →
-          </span>
-        ) : null}
-        {group.slave_ids.map((id) => (
-          <button
-            key={id}
-            type="button"
-            className="sync-chip sync-chip-follower"
-            role="listitem"
-            disabled={busy}
-            title={`Remove ${byId[id]?.name || id}`}
-            onClick={() => props.onRemove(id)}
-          >
-            {byId[id]?.name || id}
-            <span className="sync-chip-x" aria-hidden="true">
-              ×
-            </span>
-          </button>
-        ))}
+      <div className="sync-chain">
+        <ul className="sync-members" aria-label={`${group.primary_name} group`}>
+          <li>
+            <span className="sync-chip sync-chip-primary">{group.primary_name}</span>
+          </li>
+          {followerCount > 0 ? (
+            <li className="sync-arrow" aria-hidden="true">
+              →
+            </li>
+          ) : null}
+          {group.slave_ids.map((id) => {
+            const name = byId[id]?.name || id;
+            return (
+              <li key={id}>
+                <button
+                  type="button"
+                  className="sync-chip sync-chip-follower"
+                  disabled={busy}
+                  aria-label={`Remove ${name} from the group`}
+                  title={`Remove ${name}`}
+                  onClick={() => props.onRemove(id)}
+                >
+                  {name}
+                  <span className="sync-chip-x" aria-hidden="true">
+                    ×
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
         {open && <ChoiceChips rooms={candidates} busy={busy} onPick={props.onAdd} prefix="+ " />}
       </div>
     </article>
