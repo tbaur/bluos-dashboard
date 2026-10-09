@@ -264,6 +264,24 @@ describe('HouseRemote', () => {
     field.remove();
   });
 
+  it('handles the other shortcuts and ignores modified keys', async () => {
+    renderRemote();
+    fireEvent.keyDown(window, { key: 'k' });
+    await waitFor(() => expect(toggle).toHaveBeenCalledWith('1'));
+    // The follower is painted to match the lead.
+    await waitFor(() => expect(useFleetStore.getState().devices[1].state).toBe('pause'));
+
+    fireEvent.keyDown(window, { key: 'j' });
+    await waitFor(() => expect(back).toHaveBeenCalledWith('1'));
+    expect(useFleetStore.getState().houseSession.phase).toBe('catchup');
+
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(useFleetStore.getState().fleetMuteAll).toHaveBeenCalledWith(true);
+
+    fireEvent.keyDown(window, { key: 'l', metaKey: true });
+    expect(skip).not.toHaveBeenCalled();
+  });
+
   it('keeps the hero on the new title when skip splits a merged house stream', async () => {
     useFleetStore.setState({
       devices: [

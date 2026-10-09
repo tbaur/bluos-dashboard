@@ -37,10 +37,10 @@ export default defineConfig({
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/main.tsx', 'src/vite-env.d.ts', 'src/version.ts'],
       thresholds: {
-        lines: 82,
-        functions: 82,
-        statements: 80,
-        branches: 69,
+        lines: 86,
+        functions: 85,
+        statements: 84,
+        branches: 71,
         // The store holds the optimistic-update and hold-window logic, which is
         // where the subtle races live. Gate it on its own so a global average
         // cannot hide a regression here.
