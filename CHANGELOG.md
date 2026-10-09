@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.2](https://github.com/tbaur/bluos-dashboard/compare/v1.2.1...v1.2.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* announce sync group followers as remove buttons ([#107](https://github.com/tbaur/bluos-dashboard/issues/107)) ([542cf59](https://github.com/tbaur/bluos-dashboard/commit/542cf597d6eb20a7b32d9a65b57eece59cdaa67b))
+
 ## [1.2.1](https://github.com/tbaur/bluos-dashboard/compare/v1.2.0...v1.2.1) (2026-10-09)
 
 
