@@ -3,6 +3,7 @@ import type { PlayerStatus } from '@/api/types';
 import type { HouseStreamSource } from '@/lib/fleetStatus';
 import {
   alsoPlayingMeta,
+  focusedSource,
   otherStreams,
   rosterHeading,
   speakerRoleLabel,
@@ -145,6 +146,23 @@ describe('speakerRoster', () => {
       ['Hallway', 'Lead'],
       ['Kitchen', 'Synced'],
     ]);
+  });
+});
+
+describe('focusedSource', () => {
+  it('follows the chosen players after their track key changes', () => {
+    const before = [
+      source({ key: 'stream:house|artist', memberIds: ['big'], primary: 'House' }),
+      source({ key: 'stream:other|artist', memberIds: ['solo'], primary: 'Other' }),
+    ];
+    expect(focusedSource(before, ['solo'])?.primary).toBe('Other');
+
+    const afterSkip = [
+      source({ key: 'stream:house|artist', memberIds: ['big'], primary: 'House' }),
+      source({ key: 'stream:next|artist', memberIds: ['solo'], primary: 'Next' }),
+    ];
+    expect(focusedSource(afterSkip, ['solo'])?.primary).toBe('Next');
+    expect(focusedSource(afterSkip, null)?.primary).toBe('House');
   });
 });
 

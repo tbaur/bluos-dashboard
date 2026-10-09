@@ -144,16 +144,19 @@ describe('HouseRemote', () => {
     renderRemote();
     expect(screen.getByText('Sapana — Artist')).toBeInTheDocument();
     expect(screen.getByText('Night')).toBeInTheDocument();
-    expect(screen.queryByRole('list', { name: 'Speakers on this stream' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '2 speakers' }));
-    expect(screen.getByRole('list', { name: 'Speakers on this stream' })).toBeInTheDocument();
-    expect(screen.getByText('In this group')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const speakers = screen.getByRole('button', { name: '2 speakers' });
+    fireEvent.mouseEnter(speakers);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(speakers);
+    const dialog = screen.getByRole('dialog', { name: 'In this group' });
+    expect(dialog).toBeInTheDocument();
     expect(screen.getByText('Hallway')).toBeInTheDocument();
     expect(screen.getByText('Kitchen')).toBeInTheDocument();
     expect(screen.getByText('Lead')).toBeInTheDocument();
-    expect(document.querySelector('.house-roster-role')).toHaveTextContent('Lead');
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.queryByRole('list', { name: 'Speakers on this stream' })).not.toBeInTheDocument();
+    expect(dialog.querySelector('.house-roster-role')).toHaveTextContent('Lead');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause house stream' }));
     await waitFor(() => expect(toggle).toHaveBeenCalledWith('1'));
@@ -436,6 +439,27 @@ describe('HouseRemote', () => {
     expect(screen.queryByText('In this group')).not.toBeInTheDocument();
   });
 
+  it('lists every speaker in the dialog when the stream is long', () => {
+    const names = Array.from({ length: 20 }, (_, index) => `Room ${index + 1}`);
+    useFleetStore.setState({
+      devices: names.map((name, index) =>
+        player({
+          id: String(index + 1),
+          name,
+          state: 'play',
+          track: 'Shared',
+          artist: 'Artist',
+        }),
+      ),
+      sync: { groups: [], standalone_ids: names.map((_, index) => String(index + 1)) },
+    });
+    renderRemote();
+    fireEvent.click(screen.getByRole('button', { name: '20 speakers' }));
+    const dialog = screen.getByRole('dialog', { name: 'On this stream' });
+    expect(dialog.querySelectorAll('.house-roster li')).toHaveLength(20);
+    expect(screen.getByText('Room 20')).toBeInTheDocument();
+  });
+
   it('shows three other streams and can focus the rest', () => {
     const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
     useFleetStore.setState({
@@ -464,53 +488,55 @@ describe('HouseRemote', () => {
     expect(screen.getByText('Foxtrot — Artist')).toBeInTheDocument();
   });
 
-  it('moves the other-stream hover with playback', () => {
-    let now = 10_000;
-    vi.spyOn(performance, 'now').mockImplementation(() => now);
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      frames.push(cb);
-      return frames.length;
+  it('stays on the stream you chose after that song changes', async () => {
+    useFleetStore.setState({
+      devices: [
+        player({
+          id: '1',
+          name: 'Hallway',
+          state: 'play',
+          track: 'House',
+          artist: 'Artist',
+        }),
+        player({
+          id: '2',
+          name: 'Kitchen',
+          state: 'play',
+          track: 'Other',
+          artist: 'Artist',
+        }),
+      ],
+      sync: { groups: [], standalone_ids: ['1', '2'] },
     });
-    vi.stubGlobal('cancelAnimationFrame', () => undefined);
-    try {
+    renderRemote();
+    expect(screen.getByText('House — Artist')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Other — Artist/ }));
+    expect(screen.getByText('Other — Artist')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next track' }));
+    await waitFor(() => expect(skip).toHaveBeenCalledWith('2'));
+    act(() => {
       useFleetStore.setState({
         devices: [
-          player({
-            id: '1',
-            name: 'Hallway',
-            state: 'play',
-            track: 'House',
-            artist: 'Artist',
-            secs: 30,
-            totlen: 240,
-            can_seek: true,
-          }),
-          player({
-            id: '2',
-            name: 'Kitchen',
-            state: 'play',
-            service: 'Radio',
-            track: 'Other',
-            artist: 'Artist',
-            secs: 12,
-            totlen: 464,
-          }),
+          player({ id: '1', name: 'Hallway', state: 'play', track: 'House', artist: 'Artist' }),
+          player({ id: '2', name: 'Kitchen', state: 'play', track: 'Next', artist: 'Artist' }),
         ],
-        sync: { groups: [], standalone_ids: ['1', '2'] },
       });
-      renderRemote();
-      const fill = document.querySelector('.house-also-pop .dossier-progress-fill');
-      expect(screen.getByText('0:12')).toBeInTheDocument();
-      expect(fill).toHaveStyle({ transform: `scaleX(${12 / 464})` });
-      now = 12_400;
-      frames.at(-1)?.(now);
-      expect(screen.getByText('0:14')).toBeInTheDocument();
-      expect(fill).toHaveStyle({ transform: `scaleX(${14.4 / 464})` });
-    } finally {
-      vi.unstubAllGlobals();
-      vi.restoreAllMocks();
-    }
+    });
+    expect(document.querySelector('.house-remote-primary')).toHaveTextContent('Next — Artist');
+    expect(screen.getByRole('button', { name: /House — Artist/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /House — Artist/ }));
+    act(() => {
+      useFleetStore.setState({
+        devices: [
+          player({ id: '1', name: 'Hallway', state: 'play', track: 'Later', artist: 'Artist' }),
+          player({ id: '2', name: 'Kitchen', state: 'play', track: 'Next', artist: 'Artist' }),
+        ],
+      });
+    });
+    expect(document.querySelector('.house-remote-primary')).toHaveTextContent('Later — Artist');
+    expect(screen.getByRole('button', { name: /Next — Artist/ })).toBeInTheDocument();
   });
 
   it('cycles repeat off → all → one', async () => {

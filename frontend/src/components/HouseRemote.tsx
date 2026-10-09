@@ -5,7 +5,6 @@ import type { PlayerStatus, SyncState } from '@/api/types';
 import { SeekBar } from '@/components/SeekBar';
 import { StickyArt } from '@/components/StickyArt';
 import { playerArtSrc } from '@/lib/artwork';
-import { usePlaybackPaint } from '@/hooks/usePlaybackPaint';
 import { useStableHouseStatus } from '@/hooks/useStableHouseStatus';
 import {
   fleetHasActivePlayback,
@@ -13,11 +12,10 @@ import {
   type HouseStreamSource,
 } from '@/lib/fleetStatus';
 import { displaySyncRole } from '@/lib/syncGraph';
-import { formatClock } from '@/lib/clock';
-import { clampPlayback, playbackProgress } from '@/lib/playbackClock';
 import {
   ALSO_PLAYING_VISIBLE,
   alsoPlayingMeta,
+  focusedSource,
   otherStreams,
   rosterHeading,
   speakerRoster,
@@ -155,7 +153,7 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
   const fleetStopAll = useFleetStore((s) => s.fleetStopAll);
   const location = useLocation();
   const [busy, setBusy] = useState<string | null>(null);
-  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [focusMemberIds, setFocusMemberIds] = useState<string[] | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const playButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef(false);
@@ -164,10 +162,7 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
   const allMuted = devices.length > 0 && devices.every((d) => d.muted);
   const anyPlaying = fleetHasActivePlayback(devices);
   const mixed = status.sources.length > 1;
-  const selectedKey =
-    focusKey && status.sources.some((source) => source.key === focusKey) ? focusKey : null;
-  const focused =
-    status.sources.find((source) => source.key === selectedKey) ?? status.sources[0] ?? null;
+  const focused = focusedSource(status.sources, focusMemberIds);
 
   const targets = focused ? houseTransportTargets(focused, devices) : [];
   const lead = transportLead(targets, devices);
@@ -274,10 +269,10 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
   const showAlsoPlaying = showAlso(alsoVisible, alsoMeta);
   const overflow = others.length - alsoVisible.length;
 
-  const chooseStream = (key: string) => {
+  const chooseStream = (memberIds: readonly string[]) => {
     returnFocusRef.current = true;
     setMoreOpen(false);
-    setFocusKey(key);
+    setFocusMemberIds([...memberIds]);
   };
 
   useLayoutEffect(() => {
@@ -510,7 +505,7 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
               <ul className="house-also-more-list" aria-label="More streams">
                 {others.slice(ALSO_PLAYING_VISIBLE).map((source) => (
                   <li key={source.key}>
-                    <button type="button" onClick={() => chooseStream(source.key)}>
+                    <button type="button" onClick={() => chooseStream(source.memberIds)}>
                       {source.primary}
                     </button>
                   </li>
@@ -525,7 +520,7 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
                 source={source}
                 devices={devices}
                 sync={sync}
-                onFocus={() => chooseStream(source.key)}
+                onFocus={() => chooseStream(source.memberIds)}
               />
             ))}
           </div>
@@ -540,46 +535,67 @@ function showAlso(visible: { length: number }, meta: string): boolean {
 }
 
 function SpeakerChip({ place, rows }: { place: string; rows: SpeakerRosterRow[] }) {
-  const [pinned, setPinned] = useState(false);
-  const [hovering, setHovering] = useState(false);
-  const open = pinned || hovering;
-
-  useEffect(() => {
-    if (!pinned) return undefined;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPinned(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [pinned]);
-
+  const [open, setOpen] = useState(false);
   return (
-    <div
-      className="house-where"
-      data-open={open ? 'true' : 'false'}
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => setHovering(false)}
-      onBlur={(event) => {
-        const next = event.relatedTarget;
-        if (!(next instanceof Node) || !event.currentTarget.contains(next)) setPinned(false);
-      }}
-    >
+    <>
       <button
         type="button"
         className="house-where-chip"
+        aria-haspopup="dialog"
         aria-expanded={open}
-        aria-controls="house-speaker-roster"
-        onClick={() => setPinned((value) => !value)}
+        onClick={() => setOpen(true)}
       >
         {place}
       </button>
       {open ? (
-        <div className="house-roster-pop" id="house-speaker-roster">
-          <p className="house-roster-kicker">{rosterHeading(rows)}</p>
-          <SpeakerRoster rows={rows} />
-        </div>
+        <SpeakerDialog place={place} rows={rows} onClose={() => setOpen(false)} />
       ) : null}
-    </div>
+    </>
+  );
+}
+
+function SpeakerDialog({
+  place,
+  rows,
+  onClose,
+}: {
+  place: string;
+  rows: SpeakerRosterRow[];
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const heading = rosterHeading(rows);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || dialog.open) return undefined;
+    dialog.showModal();
+    closeRef.current?.focus();
+    return undefined;
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="house-roster-dialog"
+      aria-labelledby="house-speaker-dialog-title"
+      onClose={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="house-roster-dialog-head">
+        <div>
+          <h2 id="house-speaker-dialog-title">{heading}</h2>
+          <p>{place}</p>
+        </div>
+        <button ref={closeRef} type="button" className="btn" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <SpeakerRoster rows={rows} />
+    </dialog>
   );
 }
 
@@ -612,69 +628,17 @@ function AlsoStream({
 }) {
   const rows = speakerRoster(source, devices, sync);
   const place = streamPlaceLabel(rows.length, rows[0]?.name ?? '');
-  const lead = devices.find((device) => device.id === source.leadId);
-  const album = source.album && source.album !== source.primary ? source.album : '';
-  const totlen = lead?.totlen ?? 0;
-  const playing = lead?.state === 'play' || lead?.state === 'stream';
-  const timeRef = useRef<HTMLSpanElement>(null);
-  const fillRef = useRef<HTMLDivElement>(null);
-  const lengthRef = useRef(totlen);
-  useLayoutEffect(() => {
-    lengthRef.current = totlen;
-  });
-  usePlaybackPaint(lead?.secs ?? 0, playing && totlen > 0, (raw) => {
-    const length = lengthRef.current;
-    const position = clampPlayback(raw, length);
-    if (timeRef.current) timeRef.current.textContent = formatClock(position);
-    if (fillRef.current) {
-      fillRef.current.style.transform = `scaleX(${playbackProgress(position, length)})`;
-    }
-    return position;
-  });
   return (
-    <div className="house-also-tile">
-      <button type="button" className="house-also-open" onClick={onFocus}>
-        <StickyArt
-          src={source.leadId ? playerArtSrc(source.leadId, source.image) : ''}
-          className="house-also-thumb"
-          empty={<span className="house-also-thumb house-also-thumb-empty" aria-hidden="true" />}
-        />
-        <span className="house-also-copy">
-          <span className="house-also-place">{place}</span>
-          <span className="house-also-title">{source.primary}</span>
-        </span>
-      </button>
-      <div className="house-also-pop">
-        <div className="house-also-pop-top">
-          <StickyArt
-            src={source.leadId ? playerArtSrc(source.leadId, source.image) : ''}
-            className="house-also-pop-art"
-            empty={<span className="house-also-pop-art house-also-thumb-empty" aria-hidden="true" />}
-          />
-          <div>
-            <p className="house-roster-kicker">{rosterHeading(rows)}</p>
-            <p className="house-also-pop-title">{source.primary}</p>
-            {album ? <p className="house-also-pop-sub">{album}</p> : null}
-            {totlen > 0 ? (
-              <p className="house-also-pop-sub">
-                {source.detail ? `${source.detail} · ` : null}
-                <span ref={timeRef} />
-                {` / ${formatClock(totlen)}`}
-              </p>
-            ) : source.detail ? (
-              <p className="house-also-pop-sub">{source.detail}</p>
-            ) : null}
-          </div>
-        </div>
-        {totlen > 0 ? (
-          <div className="house-also-pop-seek" aria-hidden="true">
-            <div className="dossier-progress-track">
-              <div ref={fillRef} className="dossier-progress-fill" />
-            </div>
-          </div>
-        ) : null}
-        <SpeakerRoster rows={rows} />
-      </div>
-    </div>
+    <button type="button" className="house-also-open" onClick={onFocus}>
+      <StickyArt
+        src={source.leadId ? playerArtSrc(source.leadId, source.image) : ''}
+        className="house-also-thumb"
+        empty={<span className="house-also-thumb house-also-thumb-empty" aria-hidden="true" />}
+      />
+      <span className="house-also-copy">
+        <span className="house-also-place">{place}</span>
+        <span className="house-also-title">{source.primary}</span>
+      </span>
+    </button>
   );
 }

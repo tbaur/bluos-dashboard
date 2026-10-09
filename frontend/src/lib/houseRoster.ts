@@ -90,3 +90,29 @@ export function otherStreams(
 ): HouseStreamSource[] {
   return sources.filter((source) => source.key !== focusKey);
 }
+
+/**
+ * Stay on the players the user chose. A solo stream's key is the track, so
+ * skip would otherwise drop the selection and fall back to the largest stream.
+ */
+export function focusedSource(
+  sources: readonly HouseStreamSource[],
+  memberIds: readonly string[] | null,
+): HouseStreamSource | null {
+  if (sources.length === 0) return null;
+  if (!memberIds || memberIds.length === 0) return sources[0];
+  const wanted = new Set(memberIds);
+  let best: HouseStreamSource | null = null;
+  let bestCount = 0;
+  for (const source of sources) {
+    let count = 0;
+    for (const id of source.memberIds) {
+      if (wanted.has(id)) count += 1;
+    }
+    if (count > bestCount) {
+      best = source;
+      bestCount = count;
+    }
+  }
+  return best ?? sources[0];
+}
