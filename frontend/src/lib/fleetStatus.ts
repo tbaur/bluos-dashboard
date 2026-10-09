@@ -296,11 +296,16 @@ function emptyHouseStatus(partial: Partial<FleetHouseStatus> = {}): FleetHouseSt
 }
 
 function liveCandidates(devices: PlayerStatus[]): PlayerStatus[] {
-  const established = devices.filter((d) => isEstablishedPlayback(d.state));
-  if (established.length > 0) {
-    return devices.filter((d) => isEstablishedPlayback(d.state) || d.state === 'connecting');
+  const playing = devices.some((device) => isEstablishedPlayback(device.state));
+  if (playing) {
+    return devices.filter(
+      (device) =>
+        isEstablishedPlayback(device.state) ||
+        device.state === 'connecting' ||
+        (isPaused(device.state) && Boolean(streamKey(device))),
+    );
   }
-  return devices.filter((d) => isPaused(d.state) && streamKey(d));
+  return devices.filter((device) => isPaused(device.state) && streamKey(device));
 }
 
 function houseStreams(devices: PlayerStatus[], sync: SyncState | null): HouseStreamSource[] {
@@ -425,9 +430,12 @@ function applyCatchup(
   if (hasForeignSource(devices, sessionIds, keys)) return live;
 
   const members = catchupMembers(devices, pinned, sessionIds, keys);
-  return finalizeHouseStatus(devices, sync, [
-    clusterToSource({ members, lead: pickLead(members) }),
-  ]);
+  const pinnedSource = clusterToSource({ members, lead: pickLead(members) });
+  const pinnedIds = new Set(pinnedSource.memberIds);
+  const others = live.sources.filter(
+    (source) => !source.memberIds.some((id) => pinnedIds.has(id)),
+  );
+  return finalizeHouseStatus(devices, sync, [pinnedSource, ...others]);
 }
 
 /** Command the sync primary, or the stream lead — never every AirPlay room. */

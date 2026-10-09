@@ -207,7 +207,8 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
     const members = focused?.memberIds ?? ids;
     const followers = syncedFollowerIds(members, ids, devices, sync);
     if (key === 'skip' || key === 'back') {
-      useFleetStore.getState().beginHouseCatchup(members);
+      setFocusMemberIds([...ids]);
+      useFleetStore.getState().beginHouseCatchup([...ids, ...followers]);
     }
     run(key, async () => {
       holdCluster(followers);
@@ -246,12 +247,14 @@ export function HouseRemote({ variant = 'fleet' }: HouseRemoteProps) {
       } else if (event.key === 'ArrowRight' || event.key === 'l') {
         if (ids.length === 0) return;
         event.preventDefault();
-        store.beginHouseCatchup(members);
+        setFocusMemberIds([...ids]);
+        store.beginHouseCatchup([...ids, ...followers]);
         send((id) => api.skip(id));
       } else if (event.key === 'ArrowLeft' || event.key === 'j') {
         if (ids.length === 0) return;
         event.preventDefault();
-        store.beginHouseCatchup(members);
+        setFocusMemberIds([...ids]);
+        store.beginHouseCatchup([...ids, ...followers]);
         send((id) => api.back(id));
       } else if (event.key === 'm' || event.key === 'M') {
         event.preventDefault();
@@ -536,9 +539,15 @@ function showAlso(visible: { length: number }, meta: string): boolean {
 
 function SpeakerChip({ place, rows }: { place: string; rows: SpeakerRosterRow[] }) {
   const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const close = () => {
+    setOpen(false);
+    buttonRef.current?.focus();
+  };
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
         className="house-where-chip"
         aria-haspopup="dialog"
@@ -547,9 +556,7 @@ function SpeakerChip({ place, rows }: { place: string; rows: SpeakerRosterRow[] 
       >
         {place}
       </button>
-      {open ? (
-        <SpeakerDialog place={place} rows={rows} onClose={() => setOpen(false)} />
-      ) : null}
+      {open ? <SpeakerDialog place={place} rows={rows} onClose={close} /> : null}
     </>
   );
 }
@@ -572,8 +579,19 @@ function SpeakerDialog({
     if (!dialog || dialog.open) return undefined;
     dialog.showModal();
     closeRef.current?.focus();
-    return undefined;
+    return () => {
+      if (dialog.open) dialog.close();
+    };
   }, []);
+
+  const requestClose = () => {
+    const dialog = dialogRef.current;
+    if (dialog?.open) {
+      dialog.close();
+      return;
+    }
+    onClose();
+  };
 
   return (
     <dialog
@@ -582,7 +600,7 @@ function SpeakerDialog({
       aria-labelledby="house-speaker-dialog-title"
       onClose={onClose}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) requestClose();
       }}
     >
       <div className="house-roster-dialog-head">
@@ -590,7 +608,7 @@ function SpeakerDialog({
           <h2 id="house-speaker-dialog-title">{heading}</h2>
           <p>{place}</p>
         </div>
-        <button ref={closeRef} type="button" className="btn" onClick={onClose}>
+        <button ref={closeRef} type="button" className="btn" onClick={requestClose}>
           Close
         </button>
       </div>

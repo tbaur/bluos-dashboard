@@ -164,6 +164,18 @@ describe('focusedSource', () => {
     expect(focusedSource(afterSkip, ['solo'])?.primary).toBe('Next');
     expect(focusedSource(afterSkip, null)?.primary).toBe('House');
   });
+
+  it('follows the lead when direct rooms stay on the old audio', () => {
+    const afterSkip = [
+      source({
+        key: 'stream:old|artist',
+        memberIds: ['d1', 'd2', 'd3', 'd4', 'd5'],
+        primary: 'Old',
+      }),
+      source({ key: 'stream:next|artist', memberIds: ['lead', 'follow'], primary: 'Next' }),
+    ];
+    expect(focusedSource(afterSkip, ['lead'])?.primary).toBe('Next');
+  });
 });
 
 describe('alsoPlayingMeta', () => {

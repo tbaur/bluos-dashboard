@@ -780,6 +780,16 @@ describe('fleetHouseStatus', () => {
     expect(held.hasDominantStream).toBe(false);
   });
 
+  it('keeps another paused stream visible during play catchup', () => {
+    const devices = [
+      player({ id: '1', name: 'Hallway', state: 'play', track: 'A', artist: 'A' }),
+      player({ id: '2', name: 'Kitchen', state: 'pause', track: 'B', artist: 'B' }),
+    ];
+    const status = fleetHouseStatus(devices, null, houseCatchupSession(['1']));
+    expect(status.sourceCount).toBe(2);
+    expect(status.sources.map((source) => source.primary).sort()).toEqual(['A', 'B']);
+  });
+
   it('pins connecting rooms as one stream during play catchup', () => {
     const status = fleetHouseStatus(
       [

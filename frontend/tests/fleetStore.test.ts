@@ -212,6 +212,7 @@ describe('fleetStore', () => {
     await useFleetStore.getState().control('player-1', async () => undefined, { state: 'play' });
     expect(useFleetStore.getState().houseSession.phase).toBe('catchup');
     expect(useFleetStore.getState().houseSession.memberIds).toContain('player-1');
+    expect(useFleetStore.getState().houseSession.memberIds).toEqual(['player-1']);
   });
 
   it('holds playback for skip with no optimistic patch', async () => {

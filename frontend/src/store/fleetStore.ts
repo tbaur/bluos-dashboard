@@ -104,20 +104,6 @@ function isMutePatch(patch?: Partial<PlayerStatus>): boolean {
   return Boolean(patch && patch.muted !== undefined);
 }
 
-function activeHouseIds(devices: PlayerStatus[], extra: string[]): string[] {
-  const ids = new Set(extra);
-  for (const device of devices) {
-    if (
-      device.state === 'play' ||
-      device.state === 'stream' ||
-      device.state === 'connecting'
-    ) {
-      ids.add(device.id);
-    }
-  }
-  return [...ids];
-}
-
 function stampHold(
   current: Record<string, number>,
   ids: Iterable<string>,
@@ -799,7 +785,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     const volumeOnly = isVolumeOnlyPatch(optimistic);
     const mutePatch = isMutePatch(optimistic);
     if (optimistic?.state === 'play' || optimistic?.state === 'stream') {
-      get().beginHouseCatchup(activeHouseIds(get().devices, [deviceId]));
+      get().beginHouseCatchup([deviceId]);
     }
     if (mutePatch) {
       get().holdMute(deviceId);

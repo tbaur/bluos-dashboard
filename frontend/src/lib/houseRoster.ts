@@ -92,8 +92,9 @@ export function otherStreams(
 }
 
 /**
- * Stay on the players the user chose. A solo stream's key is the track, so
- * skip would otherwise drop the selection and fall back to the largest stream.
+ * Stay on the player the house remote is commanding. A solo stream's key is
+ * the track, and a skipped lead can be outnumbered by direct rooms that
+ * stayed on the old audio.
  */
 export function focusedSource(
   sources: readonly HouseStreamSource[],
@@ -102,17 +103,7 @@ export function focusedSource(
   if (sources.length === 0) return null;
   if (!memberIds || memberIds.length === 0) return sources[0];
   const wanted = new Set(memberIds);
-  let best: HouseStreamSource | null = null;
-  let bestCount = 0;
-  for (const source of sources) {
-    let count = 0;
-    for (const id of source.memberIds) {
-      if (wanted.has(id)) count += 1;
-    }
-    if (count > bestCount) {
-      best = source;
-      bestCount = count;
-    }
-  }
-  return best ?? sources[0];
+  return (
+    sources.find((source) => source.memberIds.some((id) => wanted.has(id))) ?? sources[0]
+  );
 }
