@@ -42,6 +42,29 @@ def test_callback_runs_before_the_existing_handler_and_restore_undoes_it() -> No
 
 
 @pytest.mark.usefixtures("exit_handlers")
+def test_server_handler_still_runs_when_the_callback_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    stops: list[int] = []
+
+    def server_handler(signum: int, frame: FrameType | None) -> None:
+        stops.append(signum)
+
+    def broken() -> None:
+        raise RuntimeError("event loop is closed")
+
+    signal.signal(signal.SIGTERM, server_handler)
+    restore = on_exit_signal(broken)
+    chained = signal.getsignal(signal.SIGTERM)
+    assert callable(chained)
+    with caplog.at_level("ERROR"):
+        chained(signal.SIGTERM, None)
+    assert stops == [signal.SIGTERM]
+    assert any("exit_signal_callback_failed" in r.message for r in caplog.records)
+    restore()
+
+
+@pytest.mark.usefixtures("exit_handlers")
 def test_os_level_handlers_are_left_alone() -> None:
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     restore = on_exit_signal(lambda: None)
