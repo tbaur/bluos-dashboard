@@ -133,6 +133,17 @@ describe('fleetStore', () => {
     expect(device.state).toBe('play');
   });
 
+  it('clears now-playing when a stopped player reports no track during the hold', async () => {
+    const playing = { ...sample, image: 'http://art/a.jpg', totlen: 200, secs: 40, state: 'play' };
+    useFleetStore.getState().setFleet([playing]);
+    await useFleetStore.getState().control('player-1', async () => undefined, { state: 'stop' });
+    useFleetStore.getState().setFleet([
+      { ...playing, track: '', artist: '', album: '', image: '', totlen: 0, secs: 0, state: 'stop' },
+    ]);
+    const device = useFleetStore.getState().devices[0];
+    expect(device).toMatchObject({ state: 'stop', track: '', artist: '', image: '', totlen: 0 });
+  });
+
   it('accepts a new track while playback is held', () => {
     useFleetStore.getState().setFleet([{ ...sample, totlen: 200, secs: 40, state: 'play' }]);
     useFleetStore.getState().holdPlayback('player-1', 10_000);
