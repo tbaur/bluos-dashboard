@@ -34,21 +34,6 @@ def _resolve_static_dir(settings: Settings) -> Path:
     return Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
-def _static_asset(static_dir: Path, full_path: str) -> Path | None:
-    """Return a built UI file, such as the favicon, when it stays inside static_dir."""
-    if not full_path or full_path.endswith("/"):
-        return None
-    root = static_dir.resolve()
-    candidate = (root / full_path).resolve()
-    try:
-        candidate.relative_to(root)
-    except ValueError:
-        return None
-    if candidate.is_file():
-        return candidate
-    return None
-
-
 def _ui_origin(settings: Settings) -> str:
     origins = settings.cors_origin_list()
     return origins[0] if origins else "http://127.0.0.1:8765"
@@ -323,13 +308,29 @@ def create_app() -> FastAPI:
         if assets.is_dir():
             app.mount("/assets", StaticFiles(directory=assets), name="assets")
 
+        def _icon_file(name: str) -> FileResponse | JSONResponse:
+            # `name` is a fixed icon filename. The request path must not choose it.
+            icon = static_dir / name
+            if icon.is_file():
+                return FileResponse(icon)
+            return JSONResponse(status_code=404, content={"error": "not_found"})
+
+        @app.get("/favicon.ico", include_in_schema=False, response_model=None)
+        async def favicon_ico() -> FileResponse | JSONResponse:
+            return _icon_file("favicon.ico")
+
+        @app.get("/favicon.svg", include_in_schema=False, response_model=None)
+        async def favicon_svg() -> FileResponse | JSONResponse:
+            return _icon_file("favicon.svg")
+
+        @app.get("/apple-touch-icon.png", include_in_schema=False, response_model=None)
+        async def apple_touch_icon() -> FileResponse | JSONResponse:
+            return _icon_file("apple-touch-icon.png")
+
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str):
             if full_path.startswith("api/"):
                 return JSONResponse(status_code=404, content={"error": "not_found"})
-            asset = _static_asset(static_dir, full_path)
-            if asset is not None:
-                return FileResponse(asset)
             if index_html is not None and index_html.is_file():
                 return FileResponse(index_html)
             return JSONResponse(status_code=404, content={"error": "ui_not_built"})

@@ -14,7 +14,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.config import Settings, get_settings
 from app.discovery.service import DiscoveryService, DiscoverySnapshot
-from app.main import _static_asset, create_app
+from app.main import create_app
 from app.middleware import _DEFAULT_CSP, _SWAGGER_CSP
 
 
@@ -69,6 +69,14 @@ async def test_lifespan_starts_and_stops(
             assert icon.status_code == 200
             assert icon.headers["content-type"].startswith("image/svg+xml")
             assert "<svg" in icon.text
+            ico_file = Path(settings.static_dir) / "favicon.ico"
+            ico_file.write_bytes(b"\x00\x00\x01\x00")
+            ico = await http.get("/favicon.ico")
+            assert ico.status_code == 200
+            assert ico.headers["content-type"].startswith("image/x-icon")
+            missing_icon = await http.get("/apple-touch-icon.png")
+            assert missing_icon.status_code == 404
+            assert missing_icon.json()["error"] == "not_found"
             docs = await http.get("/api/docs")
             assert docs.status_code == 200
             assert docs.headers["content-security-policy"] == _SWAGGER_CSP
@@ -232,19 +240,6 @@ async def test_root_serves_spa_index_when_built(
             response = await http.get("/")
             assert response.status_code == 200
             assert "ok" in response.text
-
-
-def test_static_asset_stays_inside_the_ui_directory(tmp_path: Path) -> None:
-    ui_dir = tmp_path / "ui"
-    ui_dir.mkdir()
-    icon = ui_dir / "favicon.svg"
-    icon.write_text("<svg></svg>", encoding="utf-8")
-    secret = tmp_path / "secret.txt"
-    secret.write_text("nope", encoding="utf-8")
-
-    assert _static_asset(ui_dir, "favicon.svg") == icon.resolve()
-    assert _static_asset(ui_dir, "missing.svg") is None
-    assert _static_asset(ui_dir, "../secret.txt") is None
 
 
 @pytest.mark.parametrize(
