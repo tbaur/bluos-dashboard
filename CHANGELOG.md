@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.0](https://github.com/tbaur/bluos-dashboard/compare/v2.0.0...v2.1.0) (2026-10-10)
+
+
+### Features
+
+* add a house favicon ([#122](https://github.com/tbaur/bluos-dashboard/issues/122)) ([e264306](https://github.com/tbaur/bluos-dashboard/commit/e2643061670337fafa6d66a9466177ad4b61ff4b))
+
 ## [2.0.0](https://github.com/tbaur/bluos-dashboard/compare/v1.2.7...v2.0.0) (2026-10-09)
 
 
