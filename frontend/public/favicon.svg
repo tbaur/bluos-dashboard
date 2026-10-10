@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Line house">
+  <rect width="64" height="64" rx="14" fill="#0c1014"/>
+  <g fill="none" stroke="#3d9cf0" stroke-width="1.7" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="8">
+    <path d="M25.31 7.21 L25.31 24.56"/>
+    <path d="M10.96 53.15 L10.96 13 L25.31 7.21 L52.72 25.63 L52.72 56.79 L57 56.79 L57 48.97 L34.3 36.44 L34.3 56.79 L48.86 56.79 L48.86 36.23 L31.73 25.09 L7 35.48 L7 56.79 L29.38 56.79"/>
+  </g>
+</svg>

@@ -34,6 +34,21 @@ def _resolve_static_dir(settings: Settings) -> Path:
     return Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
+def _static_asset(static_dir: Path, full_path: str) -> Path | None:
+    """Return a built UI file, such as the favicon, when it stays inside static_dir."""
+    if not full_path or full_path.endswith("/"):
+        return None
+    root = static_dir.resolve()
+    candidate = (root / full_path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    if candidate.is_file():
+        return candidate
+    return None
+
+
 def _ui_origin(settings: Settings) -> str:
     origins = settings.cors_origin_list()
     return origins[0] if origins else "http://127.0.0.1:8765"
@@ -312,6 +327,9 @@ def create_app() -> FastAPI:
         async def spa_fallback(full_path: str):
             if full_path.startswith("api/"):
                 return JSONResponse(status_code=404, content={"error": "not_found"})
+            asset = _static_asset(static_dir, full_path)
+            if asset is not None:
+                return FileResponse(asset)
             if index_html is not None and index_html.is_file():
                 return FileResponse(index_html)
             return JSONResponse(status_code=404, content={"error": "ui_not_built"})
