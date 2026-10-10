@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.1](https://github.com/tbaur/bluos-dashboard/compare/v2.1.0...v2.1.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **discovery:** find every LSDP player, including CI secondary zones ([#124](https://github.com/tbaur/bluos-dashboard/issues/124)) ([c4f1265](https://github.com/tbaur/bluos-dashboard/commit/c4f126568852f91f5bbf80f999ea6e4fe2b8b3c3))
+
 ## [2.1.0](https://github.com/tbaur/bluos-dashboard/compare/v2.0.0...v2.1.0) (2026-10-10)
 
 
