@@ -63,6 +63,23 @@ async def test_lifespan_starts_and_stops(
             assert api_miss.json()["error"] == "not_found"
             asset = await http.get("/assets/app.js")
             assert asset.status_code == 200
+            icon_file = Path(settings.static_dir) / "favicon.svg"
+            icon_file.write_text("<svg></svg>", encoding="utf-8")
+            icon = await http.get("/favicon.svg")
+            assert icon.status_code == 200
+            assert icon.headers["content-type"].startswith("image/svg+xml")
+            assert "<svg" in icon.text
+            ico_file = Path(settings.static_dir) / "favicon.ico"
+            ico_file.write_bytes(b"\x00\x00\x01\x00")
+            ico = await http.get("/favicon.ico")
+            assert ico.status_code == 200
+            assert ico.headers["content-type"].split(";")[0] in {
+                "image/x-icon",
+                "image/vnd.microsoft.icon",
+            }
+            missing_icon = await http.get("/apple-touch-icon.png")
+            assert missing_icon.status_code == 404
+            assert missing_icon.json()["error"] == "not_found"
             docs = await http.get("/api/docs")
             assert docs.status_code == 200
             assert docs.headers["content-security-policy"] == _SWAGGER_CSP

@@ -308,6 +308,25 @@ def create_app() -> FastAPI:
         if assets.is_dir():
             app.mount("/assets", StaticFiles(directory=assets), name="assets")
 
+        def _icon_file(name: str) -> FileResponse | JSONResponse:
+            # `name` is a fixed icon filename. The request path must not choose it.
+            icon = static_dir / name
+            if icon.is_file():
+                return FileResponse(icon)
+            return JSONResponse(status_code=404, content={"error": "not_found"})
+
+        @app.get("/favicon.ico", include_in_schema=False, response_model=None)
+        async def favicon_ico() -> FileResponse | JSONResponse:
+            return _icon_file("favicon.ico")
+
+        @app.get("/favicon.svg", include_in_schema=False, response_model=None)
+        async def favicon_svg() -> FileResponse | JSONResponse:
+            return _icon_file("favicon.svg")
+
+        @app.get("/apple-touch-icon.png", include_in_schema=False, response_model=None)
+        async def apple_touch_icon() -> FileResponse | JSONResponse:
+            return _icon_file("apple-touch-icon.png")
+
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str):
             if full_path.startswith("api/"):
