@@ -102,6 +102,9 @@ def make_device_id(
 ) -> str:
     if node_id:
         cleaned = re.sub(r"[^a-zA-Z0-9._-]", "-", node_id.strip())[:64].strip("-")
+        # Every zone of a multi-zone chassis announces the same node ID.
+        if cleaned and port is not None and port != DEFAULT_BLUOS_PORT:
+            cleaned = f"{cleaned}-{port}"
         if cleaned and validate_device_id(cleaned):
             return cleaned
     endpoint = format_endpoint(ip.strip(), port if port is not None else DEFAULT_BLUOS_PORT)

@@ -49,10 +49,15 @@ Binding beyond loopback with an empty `BSD_API_TOKEN` logs an `insecure_bind` wa
 | `BSD_SSE_KEEPALIVE_SECONDS` | `15` | SSE keepalive interval |
 | `BSD_SSE_QUEUE_SIZE` | `32` | Per-subscriber SSE queue size (drop-oldest under backpressure) |
 | `BSD_ALLOW_NON_PRIVATE_IPS` | `false` | Escape hatch — allow non-private device IPs (unsafe) |
-| `BSD_BLUOS_PORT` | `11000` | Default BluOS HTTP port (CI secondary zones use SRV ports, e.g. `11010+`) |
+| `BSD_BLUOS_PORT` | `11000` | Default BluOS HTTP port. CI secondary zones use their own port (e.g. `11010`) from the mDNS SRV record or the LSDP announce |
 | `BSD_WEB_UI_PORT` | `80` | Device web UI port (diagnostics, upgrade, setting writes) |
 
-mDNS discovers primary players (`_musc._tcp.local.`) and CI secondary zones (`_musp._tcp.local.`, e.g. NAD CI S2). Players are keyed as canonical `ip:port`. LSDP discovers chassis IPs only (normalized to `ip:11000`); secondary zones require mDNS. Only endpoints that answer `/SyncStatus` are kept in the fleet.
+Players are keyed as canonical `ip:port`. Only endpoints that answer `/SyncStatus` are kept in the fleet.
+
+- **mDNS** browses primary players (`_musc._tcp.local.`) and CI secondary zones (`_musp._tcp.local.`, e.g. NAD CI S2).
+- **LSDP** listens on UDP 11430 and sends its query to the broadcast address of each network interface. It asks for primary players (class `0x0001`), secondary zones (class `0x0003`), and hubs (class `0x0008`). A zone's port comes from the `port` value in its announce. LSDP skips a secondary zone that announces no port, and it does not guess `11010`, `11020`, and so on.
+- **Stereo-pair slaves** (`_musz`, LSDP class `0x0006`) are left out on purpose. The primary controls them and the BluOS app hides them, so listing them would add rooms that do not exist.
+- **Player IDs** come from the MAC that LSDP announces, when LSDP heard the player. A zone on a port other than `11000` gets `-<port>` added, so the zones of one chassis keep separate IDs. A player that only mDNS found gets an ID hashed from its address.
 
 ### Multi-zone and volume UI
 

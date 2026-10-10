@@ -326,25 +326,16 @@ class DiscoveryService:
             for device in lsdp_devices:
                 if not self.settings.is_allowed_device_ip(device.ip):
                     continue
-                # LSDP is chassis-level; normalize to primary BluOS port.
-                endpoint = format_endpoint(device.ip, self.settings.bluos_port)
+                port = device.port if device.port is not None else self.settings.bluos_port
+                endpoint = format_endpoint(device.ip, port)
                 existing = by_endpoint.get(endpoint)
-                if existing is None:
+                if existing is None or (device.node_id and not existing.node_id):
                     by_endpoint[endpoint] = DiscoveredEndpoint(
                         ip=device.ip,
-                        port=self.settings.bluos_port,
+                        port=port,
                         node_id=device.node_id,
                     )
-                    lsdp_added = True
-                elif device.node_id and not existing.node_id:
-                    by_endpoint[endpoint] = DiscoveredEndpoint(
-                        ip=device.ip,
-                        port=self.settings.bluos_port,
-                        node_id=device.node_id,
-                    )
-                    lsdp_added = True
-                else:
-                    lsdp_added = True
+                lsdp_added = True
             if lsdp_added:
                 methods_run.append("lsdp")
 

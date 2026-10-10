@@ -31,7 +31,7 @@ STATUS = b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 # Synced secondary: SyncStatus has the real per-player volume; /Status mirrors group volume.
 SYNC_STATUS_SLAVE = b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<SyncStatus name="Kitchen Speakers" modelName="NODE 2i" brand="Bluesound" version="4.16.6" db="-8.7" volume="64" etag="252">
+<SyncStatus name="Zone C" modelName="NODE 2i" brand="Bluesound" version="4.16.6" db="-8.7" volume="64" etag="252">
   <master port="11000">192.168.1.174</master>
 </SyncStatus>
 """

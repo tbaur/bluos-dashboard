@@ -14,7 +14,9 @@ from app.validators import DEFAULT_BLUOS_PORT, format_endpoint, sanitize_ip, val
 
 logger = logging.getLogger(__name__)
 
-# Primary BluOS players (_musc) + CI secondary zones (_musp), e.g. NAD CI S2.
+# Primary players (_musc) and CI secondary zones (_musp), for example NAD CI S2.
+# _musz is a stereo-pair slave. The primary controls it, and the BluOS app hides it.
+# Leave it out so a pair does not show up as an extra room.
 BLUOS_MDNS_SERVICES = ("_musc._tcp.local.", "_musp._tcp.local.")
 
 

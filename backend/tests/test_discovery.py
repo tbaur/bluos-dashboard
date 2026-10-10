@@ -395,3 +395,34 @@ async def test_discover_endpoints_mdns_lsdp_merge(
     # node id merged onto mdns-first endpoint
     assert next(e for e in endpoints if e.ip == "192.168.1.10").node_id == "n10"
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_lsdp_secondary_zone_keeps_announced_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bluos.client import BluOSClient
+    from app.discovery.lsdp import CLASS_BLUOS_PLAYER_SECONDARY
+
+    settings = Settings(allow_non_private_ips=False, discovery_method="lsdp")
+    client = BluOSClient(settings)
+    service = DiscoveryService(settings, client)
+    monkeypatch.setattr(
+        "app.discovery.service.LSDPDiscovery.discover",
+        lambda self: [
+            LSDPDevice(node_id="0200000000a1", ip="192.168.1.10", class_id=1, port=None),
+            LSDPDevice(
+                node_id="0200000000a1",
+                ip="192.168.1.10",
+                class_id=CLASS_BLUOS_PLAYER_SECONDARY,
+                port=11010,
+            ),
+        ],
+    )
+
+    endpoints, _method = await service._discover_endpoints()
+    assert {e.endpoint: e.node_id for e in endpoints} == {
+        "192.168.1.10:11000": "0200000000a1",
+        "192.168.1.10:11010": "0200000000a1",
+    }
+    await client.aclose()

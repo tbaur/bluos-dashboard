@@ -50,6 +50,14 @@ def test_make_device_id_prefers_node_id() -> None:
     assert make_device_id("192.168.1.10", node_id="node-ABC") == "node-ABC"
 
 
+def test_make_device_id_separates_zones_that_share_a_node_id() -> None:
+    primary = make_device_id("192.168.1.10", node_id="0200000000a1", port=11000)
+    zone = make_device_id("192.168.1.10", node_id="0200000000a1", port=11010)
+    assert primary == "0200000000a1"
+    assert primary == make_device_id("192.168.1.10", node_id="0200000000a1")
+    assert zone == "0200000000a1-11010"
+
+
 def test_safe_parse_xml_rejects_too_deep() -> None:
     settings = Settings(max_xml_depth=2, max_xml_elements=100)
     xml = b"<a><b><c><d>x</d></c></b></a>"
@@ -127,8 +135,8 @@ def test_text_and_attr_helpers() -> None:
 
 
 def test_normalize_bluos_mac_strips_ci_zone_port() -> None:
-    assert normalize_bluos_mac("90:56:82:16:61:B7:11010") == "90:56:82:16:61:B7"
-    assert normalize_bluos_mac("90:56:82:16:61:b7") == "90:56:82:16:61:B7"
+    assert normalize_bluos_mac("90:56:82:00:00:AB:11010") == "90:56:82:00:00:AB"
+    assert normalize_bluos_mac("90:56:82:00:00:ab") == "90:56:82:00:00:AB"
     assert normalize_bluos_mac("") == ""
     assert normalize_bluos_mac("not-a-mac") == "not-a-mac"
 

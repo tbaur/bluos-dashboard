@@ -136,7 +136,7 @@ async def test_synced_follower_keeps_syncstatus_volume_on_status_only(
     previous = PlayerStatus(
         id="p1",
         ip="192.168.1.88",
-        name="Kitchen Speakers",
+        name="Zone C",
         status="online",
         volume=64,
         sync_role=SyncRole.SYNCED,

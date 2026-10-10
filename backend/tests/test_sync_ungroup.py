@@ -140,7 +140,7 @@ async def test_sync_remove_keeps_primary_playing_when_slaves_remain(
     other = PlayerStatus(
         id="other",
         ip="192.168.1.12",
-        name="Roaming",
+        name="Porch",
         status="online",
         master="192.168.1.10:11000",
         sync_role=SyncRole.SYNCED,

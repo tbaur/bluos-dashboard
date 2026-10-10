@@ -311,7 +311,7 @@ async def test_bluetooth_unsupported_ci_s2_skips_probe(
         PlayerStatus(
             id="player-kitchen",
             ip="192.168.1.20",
-            name="Kitchen Speakers",
+            name="Zone C",
             model="CI S2",
             brand="NAD",
             full_model="NAD CI S2",
@@ -377,9 +377,9 @@ async def test_fleet_mute_targets_ci_secondary_zone(
     players = [
         PlayerStatus(
             id="zone-1",
-            ip="172.16.10.144",
+            ip="192.168.1.30",
             port=11000,
-            name="Living Room Speakers",
+            name="Zone D",
             model="CI S2",
             brand="NAD",
             full_model="NAD CI S2",
@@ -388,9 +388,9 @@ async def test_fleet_mute_targets_ci_secondary_zone(
         ),
         PlayerStatus(
             id="zone-2",
-            ip="172.16.10.144",
+            ip="192.168.1.30",
             port=11010,
-            name="Kitchen Speakers",
+            name="Zone C",
             model="CI S2",
             brand="NAD",
             full_model="NAD CI S2",
@@ -410,22 +410,22 @@ async def test_fleet_mute_targets_ci_secondary_zone(
         assert mute.status_code == 200
         assert mute.json()["succeeded"] == 2
         assert {c.args[0] for c in client.set_mute.await_args_list} == {
-            "172.16.10.144:11000",
-            "172.16.10.144:11010",
+            "192.168.1.30:11000",
+            "192.168.1.30:11010",
         }
 
         volume = await http.post("/api/v1/fleet/volume", json={"level": 20})
         assert volume.status_code == 200
         assert {c.args[0] for c in client.set_volume.await_args_list} == {
-            "172.16.10.144:11000",
-            "172.16.10.144:11010",
+            "192.168.1.30:11000",
+            "192.168.1.30:11010",
         }
 
         pause = await http.post("/api/v1/fleet/pause")
         assert pause.status_code == 200
         assert {c.args[0] for c in client.pause.await_args_list} == {
-            "172.16.10.144:11000",
-            "172.16.10.144:11010",
+            "192.168.1.30:11000",
+            "192.168.1.30:11010",
         }
 
         # Chassis web UI: reboot once per IP, not once per zone.
@@ -433,7 +433,7 @@ async def test_fleet_mute_targets_ci_secondary_zone(
         assert reboot.status_code == 200
         assert reboot.json()["succeeded"] == 1
         assert client.reboot.await_count == 1
-        assert client.reboot.await_args.args[0] == "172.16.10.144:11000"
+        assert client.reboot.await_args.args[0] == "192.168.1.30:11000"
     await client.aclose()
 
 

@@ -98,7 +98,7 @@ describe('fleetHouseStatus', () => {
         [
           player({
             id: '1',
-            name: 'Living Room Speakers',
+            name: 'Zone D',
             state: 'stream',
             service: 'AirPlay',
             track: 'Song',
@@ -120,7 +120,7 @@ describe('fleetHouseStatus', () => {
       leadId: '1',
       sourceCount: 1,
       album: '',
-      rooms: ['Living Room Speakers'],
+      rooms: ['Zone D'],
     });
   });
 
@@ -129,7 +129,7 @@ describe('fleetHouseStatus', () => {
       [
         player({
           id: '1',
-          name: 'Hallway Speakers',
+          name: 'Zone B',
           state: 'play',
           service: 'AirPlay',
           sync_role: 'primary',
@@ -140,7 +140,7 @@ describe('fleetHouseStatus', () => {
         }),
         player({
           id: '2',
-          name: 'Kitchen Speakers',
+          name: 'Zone C',
           state: 'stream',
           sync_role: 'synced',
           master: '10.0.0.1:11000',
@@ -149,7 +149,7 @@ describe('fleetHouseStatus', () => {
         }),
         player({
           id: '3',
-          name: 'Front Bedroom Speakers',
+          name: 'Zone A',
           state: 'stream',
           sync_role: 'synced',
           master: '10.0.0.1:11000',
@@ -161,11 +161,11 @@ describe('fleetHouseStatus', () => {
         groups: [
           {
             primary_id: '1',
-            primary_name: 'Hallway Speakers',
+            primary_name: 'Zone B',
             primary_ip: '10.0.0.1',
             group: '',
             slave_ids: ['2', '3'],
-            slave_names: ['Kitchen Speakers', 'Front Bedroom Speakers'],
+            slave_names: ['Zone C', 'Zone A'],
           },
         ],
         standalone_ids: ['4'],
@@ -219,7 +219,7 @@ describe('fleetHouseStatus', () => {
       [
         player({
           id: '1',
-          name: 'Front Bedroom Speakers',
+          name: 'Zone A',
           state: 'play',
           service: 'AirPlay',
           track: 'Joni',
@@ -228,7 +228,7 @@ describe('fleetHouseStatus', () => {
         }),
         player({
           id: '2',
-          name: 'Hallway Speakers',
+          name: 'Zone B',
           state: 'stream',
           service: 'AirPlay',
           track: 'Joni',
@@ -236,7 +236,7 @@ describe('fleetHouseStatus', () => {
         }),
         player({
           id: '3',
-          name: 'Kitchen Speakers',
+          name: 'Zone C',
           state: 'stream',
           service: 'AirPlay',
           track: 'Joni',

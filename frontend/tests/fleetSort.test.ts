@@ -68,7 +68,7 @@ describe('fleetSort', () => {
         slaves: ['10.0.0.2', '10.0.0.3'],
       }),
       player({ id: 'p', name: 'Patio', sync_role: 'standalone', ip: '10.0.0.9' }),
-      player({ id: 'r', name: 'Roaming', sync_role: 'synced', master: '10.0.0.1', ip: '10.0.0.3' }),
+      player({ id: 'r', name: 'Porch', sync_role: 'synced', master: '10.0.0.1', ip: '10.0.0.3' }),
       player({
         id: 'c',
         name: 'C658',
@@ -84,7 +84,7 @@ describe('fleetSort', () => {
       'Rec',
       'Living',
       'Kitchen',
-      'Roaming',
+      'Porch',
       'Patio',
     ]);
   });

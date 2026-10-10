@@ -68,7 +68,8 @@ Under `make run`, Vite proxies `/api` → the API. CORS defaults allow both `htt
 | Symptom | Likely cause | Action |
 |---------|--------------|--------|
 | Empty fleet | Discovery blocked (VPN/firewall) or no players | Wait for empty-fleet rediscovery (`BSD_EMPTY_FLEET_REDISCOVERY_SECONDS`); Rescan; try `BSD_DISCOVERY_METHOD=lsdp` |
-| Missing CI secondary zones | LSDP-only discovery (chassis/primary port) | Use `mdns` or `both` so `_musp` SRV ports (`11010+`) are found |
+| Missing CI secondary zones | Neither mDNS (`_musp`) nor LSDP (class `0x0003`) saw the zone, or its LSDP announce had no `port` | Rescan. Keep `BSD_DISCOVERY_METHOD=both` (the default) so either method can add the zone |
+| LSDP finds nothing and logs `lsdp_discovery_error` with `Address already in use` | Another program holds UDP 11430 without sharing it | Stop that program (`lsof -nP -iUDP:11430`), or set `BSD_DISCOVERY_METHOD=mdns` |
 | CI zones too loud/quiet vs Nodes when using one slider | Different amp volume scales | Use **NAD CI S2** for the CI chassis and **Bluesound** for Nodes/Pulse — they are separate. Bluesound chips are 20 / 48 / 60; CI S2 chips are 42 / 50 / 60 / 70 |
 | NAD C658 jumps to 0 when house volume is 20 | C658 analog floor is ~40; it is not a bluesound.com device | Set C658 volume on its player row; Bluesound slider is Pulse/Node only |
 | `device_not_found` on control | Player dropped off discovery (grace expired) | Rescan network; check `BSD_DISCOVERED_GRACE_TTL` |

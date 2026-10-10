@@ -31,7 +31,7 @@ WRITE_CASES = [
     ("enableClockTrim", "OFF", "/audiomodes", "audiomodes"),
     ("reset", "1", "/alsa_setting", "alsa_setting"),
     ("ledbrightness", "dim", "/setting", "setting"),
-    ("nodename", "Kitchen Speakers", "/Name", "Name"),
+    ("nodename", "Zone C", "/Name", "Name"),
     ("amplifierStandby", "OFF", "/setting", "setting"),
 ]
 
