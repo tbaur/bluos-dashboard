@@ -73,7 +73,10 @@ async def test_lifespan_starts_and_stops(
             ico_file.write_bytes(b"\x00\x00\x01\x00")
             ico = await http.get("/favicon.ico")
             assert ico.status_code == 200
-            assert ico.headers["content-type"].startswith("image/x-icon")
+            assert ico.headers["content-type"].split(";")[0] in {
+                "image/x-icon",
+                "image/vnd.microsoft.icon",
+            }
             missing_icon = await http.get("/apple-touch-icon.png")
             assert missing_icon.status_code == 404
             assert missing_icon.json()["error"] == "not_found"
