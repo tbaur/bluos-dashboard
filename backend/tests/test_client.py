@@ -469,8 +469,8 @@ def test_parse_ci_s2_diagnostics_html() -> None:
     html = (Path(__file__).parent / "fixtures" / "ci_diagnostics.html").read_text()
     parsed = BluOSWebUIMixin._parse_diagnostics_html(html)
     assert parsed["uptime"] == "37h13m24s"
-    assert parsed["web_ip"] == "172.16.10.101"
-    assert parsed["web_mac"] == "90:56:82:16:61:8c"
+    assert parsed["web_ip"] == "192.168.1.35"
+    assert parsed["web_mac"] == "90:56:82:00:00:02"
     assert parsed["web_fw"] == "4.16.6"
     assert parsed["total_songs"] == "0"
     assert "network_name" not in parsed
@@ -670,38 +670,38 @@ async def test_ci_secondary_zone_status_and_add_slave_port(settings: Settings) -
     sync = (
         b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         b'<SyncStatus name="Zone B" modelName="CI S2" brand="NAD" '
-        b'id="172.16.10.144:11010" volume="10" mac="90:56:82:16:61:B7:11010">'
+        b'id="192.168.1.30:11010" volume="10" mac="90:56:82:00:00:AB:11010">'
         b"</SyncStatus>"
     )
     status = b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <status><state>stop</state><volume>10</volume></status>
 """
-    respx.get("http://172.16.10.144:11010/SyncStatus").mock(
+    respx.get("http://192.168.1.30:11010/SyncStatus").mock(
         return_value=httpx.Response(200, content=sync)
     )
-    respx.get("http://172.16.10.144:11010/Status").mock(
+    respx.get("http://192.168.1.30:11010/Status").mock(
         return_value=httpx.Response(200, content=status)
     )
-    add = respx.get("http://172.16.10.144:11000/AddSlave").mock(
+    add = respx.get("http://192.168.1.30:11000/AddSlave").mock(
         return_value=httpx.Response(200, content=b"<ok/>")
     )
     client = BluOSClient(settings)
     try:
         player = await client.get_player_status(
-            "172.16.10.144:11010",
+            "192.168.1.30:11010",
             device_id="zone-b",
         )
         assert player.status == "online"
         assert player.port == 11010
         assert player.zone == 2
-        assert player.endpoint == "172.16.10.144:11010"
+        assert player.endpoint == "192.168.1.30:11010"
         assert player.brand == "NAD"
-        assert player.mac == "90:56:82:16:61:B7"
+        assert player.mac == "90:56:82:00:00:AB"
         assert await client.add_sync_slave(
-            "172.16.10.144:11000",
-            "172.16.10.144:11010",
+            "192.168.1.30:11000",
+            "192.168.1.30:11010",
         )
-        assert "slave=172.16.10.144" in str(add.calls.last.request.url)
+        assert "slave=192.168.1.30" in str(add.calls.last.request.url)
         assert "port=11010" in str(add.calls.last.request.url)
     finally:
         await client.aclose()

@@ -270,14 +270,14 @@ describe('DeviceSettingsPanel', () => {
     await screen.findByLabelText('Room name');
 
     fireEvent.change(screen.getByLabelText('Room name'), {
-      target: { value: 'Kitchen Speakers' },
+      target: { value: 'Zone C' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Update' }));
     await waitFor(() => {
       expect(setSetting).toHaveBeenCalledWith(
         'player-kitchen',
         'nodename',
-        'Kitchen Speakers',
+        'Zone C',
       );
     });
   });
@@ -334,7 +334,7 @@ describe('DeviceSettingsPanel', () => {
                 id: 'nodename',
                 display_name: 'Room name',
                 kind: 'text',
-                value: 'Kitchen Speakers',
+                value: 'Zone C',
                 disabled: true,
                 control_path: '/Name',
                 explanation: 'Locked by Apple Home',

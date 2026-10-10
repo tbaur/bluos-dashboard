@@ -91,7 +91,7 @@ describe('FleetBar house remote art', () => {
       devices: [
         player({
           id: '1',
-          name: 'Hallway Speakers',
+          name: 'Zone B',
           state: 'play',
           service: 'AirPlay',
           sync_role: 'primary',
@@ -101,7 +101,7 @@ describe('FleetBar house remote art', () => {
         }),
         player({
           id: '2',
-          name: 'Kitchen Speakers',
+          name: 'Zone C',
           state: 'stream',
           sync_role: 'synced',
           master: '10.0.0.1:11000',
@@ -154,7 +154,7 @@ describe('FleetBar house remote art', () => {
       devices: [
         player({
           id: '1',
-          name: 'Front Bedroom Speakers',
+          name: 'Zone A',
           state: 'play',
           service: 'AirPlay',
           track: 'Joni',
@@ -163,7 +163,7 @@ describe('FleetBar house remote art', () => {
         }),
         player({
           id: '2',
-          name: 'Hallway Speakers',
+          name: 'Zone B',
           state: 'stream',
           service: 'AirPlay',
           track: 'Joni',
@@ -329,7 +329,7 @@ describe('FleetBar house remote art', () => {
     const setFleetVolume = vi.fn().mockResolvedValue(undefined);
     useFleetStore.setState({
       devices: [
-        player({ id: '1', name: 'Patio Speakers', volume: 26 }),
+        player({ id: '1', name: 'Zone E', volume: 26 }),
         player({
           id: '2',
           name: 'NAD C658',

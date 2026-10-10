@@ -38,7 +38,7 @@ def test_mdns_discover_collects_ipv4_addresses() -> None:
 
 def test_mdns_discover_keeps_musp_srv_port() -> None:
     fake_info = MagicMock()
-    fake_info.addresses = [bytes((172, 16, 10, 144))]
+    fake_info.addresses = [bytes((192, 168, 1, 30))]
     fake_info.port = 11010
 
     with (
@@ -60,7 +60,7 @@ def test_mdns_discover_keeps_musp_srv_port() -> None:
         browser_cls.side_effect = fake_browser
         endpoints = MDNSDiscovery(timeout=0.01).discover()
 
-    assert "172.16.10.144:11010" in endpoints
+    assert "192.168.1.30:11010" in endpoints
 
 
 def test_standing_browser_resolves_off_the_callback() -> None:
@@ -146,7 +146,7 @@ def test_removed_service_is_not_restored_by_a_late_lookup() -> None:
 def test_standing_mdns_membership_updates_without_a_new_browser() -> None:
     browser = StandingMDNS()
     browser.remember("node", "192.168.1.50:11000")
-    browser.remember("zone", "172.16.10.144:11010")
-    assert browser.endpoints() == ["172.16.10.144:11010", "192.168.1.50:11000"]
+    browser.remember("zone", "192.168.1.30:11010")
+    assert browser.endpoints() == ["192.168.1.30:11010", "192.168.1.50:11000"]
     browser.forget("zone")
     assert browser.endpoints() == ["192.168.1.50:11000"]

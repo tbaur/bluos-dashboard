@@ -2,9 +2,9 @@
 <settings pageId="player" schemaVersion="28">
 	<menuGroup id="player" displayName="Player" icon="/images/players/N125_nt.png">
 		<setting id="wifi" name="wifi" displayName="WiFi" icon="/images/settings/ic_wifi.png" description="Configure wireless network settings">
-			<webview url="http://172.16.10.88:80/wificfg?noheader=1"></webview>
+			<webview url="http://192.168.1.20:80/wificfg?noheader=1"></webview>
 		</setting>
-		<setting id="nodename" name="nodename" displayName="Room name" url="/Name" icon="/images/settings/ic_roomname.png" disable="true" class="text" value="Kitchen Speakers" explanation="Your player has been added to an Apple Home configuration and its name can only be changed using the Apple Home app" pattern=".{1,255}" patternError="Maximum 255 characters." refresh="true"></setting>
+		<setting id="nodename" name="nodename" displayName="Room name" url="/Name" icon="/images/settings/ic_roomname.png" disable="true" class="text" value="Zone C" explanation="Your player has been added to an Apple Home configuration and its name can only be changed using the Apple Home app" pattern=".{1,255}" patternError="Maximum 255 characters." refresh="true"></setting>
 		<menuGroup id="capture" displayName="Customize sources" icon="/images/settings/ic_capture.png" url="/setting"></menuGroup>
 		<menuGroup id="ir_remote" displayName="IR remote" icon="/images/settings/ic_irremote.png"></menuGroup>
 		<setting id="ledbrightness" name="ledbrightness" displayName="Indicator brightness" url="/setting" icon="/images/settings/ic_indicatorlight.png" class="list" value="off" description="Off">

@@ -94,7 +94,7 @@ async def test_fleet_volume_filters_device_ids(
         PlayerStatus(id="room-a", ip="192.168.1.10", name="Patio", status="online", volume=5),
         PlayerStatus(
             id="zone-1",
-            ip="172.16.10.144",
+            ip="192.168.1.30",
             port=11000,
             name="Living",
             model="CI S2",
@@ -103,7 +103,7 @@ async def test_fleet_volume_filters_device_ids(
         ),
         PlayerStatus(
             id="zone-2",
-            ip="172.16.10.144",
+            ip="192.168.1.30",
             port=11010,
             name="Kitchen",
             model="CI S2",
@@ -136,8 +136,8 @@ async def test_fleet_volume_filters_device_ids(
         body = response.json()
         assert body["succeeded"] == 2
         assert {c.args[0] for c in client.set_volume.await_args_list} == {
-            "172.16.10.144:11000",
-            "172.16.10.144:11010",
+            "192.168.1.30:11000",
+            "192.168.1.30:11010",
         }
     await client.aclose()
 

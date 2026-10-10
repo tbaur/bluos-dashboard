@@ -32,7 +32,7 @@ describe('formatDeviceHardware', () => {
 
 describe('formatDeviceHost', () => {
   it('omits the default BluOS port', () => {
-    expect(formatDeviceHost({ ip: '172.16.10.144', port: 11000 })).toBe('172.16.10.144');
-    expect(formatDeviceHost({ ip: '172.16.10.144', port: 11010 })).toBe('172.16.10.144:11010');
+    expect(formatDeviceHost({ ip: '192.168.1.30', port: 11000 })).toBe('192.168.1.30');
+    expect(formatDeviceHost({ ip: '192.168.1.30', port: 11010 })).toBe('192.168.1.30:11010');
   });
 });
