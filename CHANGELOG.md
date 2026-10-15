@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.3](https://github.com/tbaur/bluos-dashboard/compare/v2.1.2...v2.1.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* keep Unmute inside its button ([#130](https://github.com/tbaur/bluos-dashboard/issues/130)) ([b3e90aa](https://github.com/tbaur/bluos-dashboard/commit/b3e90aaf4723c66a496d4e11cb68553c67c15c58))
+
 ## [2.1.2](https://github.com/tbaur/bluos-dashboard/compare/v2.1.1...v2.1.2) (2026-10-15)
 
 
