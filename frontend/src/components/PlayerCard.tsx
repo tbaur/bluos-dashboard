@@ -8,7 +8,9 @@ import {
   formatDeviceHardware,
   formatDeviceHost,
 } from '@/lib/endpoint';
+import { createLatestValueSender, type LatestValueSender } from '@/lib/latestValueSender';
 import { joinMeta } from '@/lib/meta';
+import { audibleDevices, ownVolumePatch, unmuteTitle } from '@/lib/mute';
 import { displaySyncRole } from '@/lib/syncGraph';
 import { DRAG_VOLUME_HOLD_MS, useFleetStore } from '@/store/fleetStore';
 import { memo, useEffect, useRef, useState } from 'react';
@@ -45,10 +47,10 @@ function primaryNameFor(device: PlayerStatus, devices: PlayerStatus[]): string |
 
 function volumesAreLinked(devices: PlayerStatus[], deviceId: string): boolean {
   const me = devices.find((d) => d.id === deviceId);
-  if (!me) return false;
+  if (!me || me.muted) return false;
   const group = volumePeerGroup(me);
   if (group === 'independent') return false;
-  const peers = devices.filter((d) => volumePeerGroup(d) === group);
+  const peers = audibleDevices(devices.filter((d) => volumePeerGroup(d) === group));
   return peers.length > 1 && peers.every((d) => d.volume === peers[0].volume);
 }
 
@@ -71,6 +73,8 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
   const holdVolume = useFleetStore((s) => s.holdVolume);
   const commitTimer = useRef<number | undefined>(undefined);
   const latestLevel = useRef(device?.volume ?? 0);
+  const senderRef = useRef<LatestValueSender<number> | null>(null);
+  const draggingRef = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
 
@@ -80,13 +84,23 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
     }
   }, [device, dragging]);
 
-  // Unmounting mid-drag (sort change, rescan) must not fire a late volume write.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const sender = createLatestValueSender<number>({
+      send: (level) => {
+        const current = useFleetStore.getState().devices.find((d) => d.id === deviceId);
+        return control(deviceId, () => api.setVolume(deviceId, level), ownVolumePatch(current, level));
+      },
+      onIdle: () => {
+        if (!draggingRef.current) setDragVolume(null);
+      },
+    });
+    senderRef.current = sender;
+    // Unmounting mid-drag (sort change, rescan) must not fire a late volume write.
+    return () => {
       if (commitTimer.current) window.clearTimeout(commitTimer.current);
-    },
-    [],
-  );
+      sender.cancel();
+    };
+  }, [control, deviceId]);
 
   if (!device) return null;
   const displayVolume = dragVolume ?? device.volume;
@@ -97,7 +111,7 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
 
   const flushVolume = (level: number) => {
     latestLevel.current = level;
-    void control(device.id, () => api.setVolume(device.id, level), { volume: level });
+    senderRef.current?.push(level);
   };
 
   const onVolumeInput = (level: number) => {
@@ -111,8 +125,8 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
   };
 
   const endDrag = () => {
+    draggingRef.current = false;
     setDragging(false);
-    setDragVolume(null);
     if (commitTimer.current) {
       window.clearTimeout(commitTimer.current);
       commitTimer.current = undefined;
@@ -120,19 +134,17 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
     flushVolume(latestLevel.current);
   };
 
-  const onMuteClick = () => {
-    if (device.muted) {
-      const restore =
-        useFleetStore.getState().lastAudibleVolume[device.id] ??
-        (displayVolume > 0 ? displayVolume : 20);
-      setDragVolume(restore);
-      latestLevel.current = restore;
-    } else {
-      setDragVolume(0);
-      latestLevel.current = 0;
-    }
-    void toggleMute(device.id);
-  };
+  const onMuteClick = () => void toggleMute(device.id);
+  const muteButton = (
+    <button
+      type="button"
+      className="btn btn-compact"
+      title={unmuteTitle(device)}
+      onClick={onMuteClick}
+    >
+      {device.muted ? 'Unmute' : 'Mute'}
+    </button>
+  );
 
   return (
     <div
@@ -191,11 +203,7 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
         aria-label={`Transport for ${device.name}`}
       >
         {synced ? (
-          <div className="fleet-synced-hint">
-            <button type="button" className="btn btn-compact" onClick={onMuteClick}>
-              {device.muted ? 'Unmute' : 'Mute'}
-            </button>
-          </div>
+          <div className="fleet-synced-hint">{muteButton}</div>
         ) : (
           <>
             <button
@@ -234,14 +242,16 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
             >
               Next
             </button>
-            <button type="button" className="btn btn-compact" onClick={onMuteClick}>
-              {device.muted ? 'Unmute' : 'Mute'}
-            </button>
+            {muteButton}
           </>
         )}
       </div>
 
-      <div className="fleet-cell fleet-cell-volume" role="cell">
+      <div
+        className="fleet-cell fleet-cell-volume"
+        role="cell"
+        data-muted={device.muted ? 'true' : 'false'}
+      >
         <input
           id={`vol-${device.id}`}
           type="range"
@@ -253,6 +263,7 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
           aria-valuemax={100}
           aria-valuenow={displayVolume}
           onPointerDown={() => {
+            draggingRef.current = true;
             setDragging(true);
             setDragVolume(device.volume);
             holdVolume(device.id, DRAG_VOLUME_HOLD_MS);

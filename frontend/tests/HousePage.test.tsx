@@ -127,7 +127,6 @@ describe('HousePage actions', () => {
       houseSession: LIVE_HOUSE_SESSION,
       globalVolumeHoldUntil: 0,
       syncHoldUntil: 0,
-      lastAudibleVolume: {},
       fleetMuteAll: vi.fn().mockResolvedValue(undefined),
       fleetPauseAll: vi.fn().mockResolvedValue(undefined),
       fleetStopAll: vi.fn().mockResolvedValue(undefined),

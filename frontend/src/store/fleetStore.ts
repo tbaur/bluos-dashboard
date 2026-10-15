@@ -15,6 +15,7 @@ import {
   LIVE_HOUSE_SESSION,
   type HouseSession,
 } from '@/lib/houseSession';
+import { mutedPatch, unmutedPatch } from '@/lib/mute';
 import { dropStaleFollowerClaims } from '@/lib/syncGraph';
 
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline';
@@ -29,7 +30,6 @@ const HOUSE_CATCHUP_MS = 10_000;
 /** BluOS SyncStatus often lags AddSlave by a few seconds. */
 const LINK_RETRY_ATTEMPTS = 16;
 const LINK_RETRY_MS = 200;
-const DEFAULT_UNMUTE_VOLUME = 20;
 
 /** A slider drag can outlast one round trip, so its hold covers the whole gesture. */
 export const DRAG_VOLUME_HOLD_MS = 5000;
@@ -61,8 +61,6 @@ interface FleetState {
   globalVolumeHoldUntil: number;
   /** Ignore stale sync snapshots while BluOS catches up after add or ungroup. */
   syncHoldUntil: number;
-  /** Last non-zero volume per device — restored on unmute */
-  lastAudibleVolume: Record<string, number>;
   load: () => Promise<void>;
   /** Full LAN rediscovery (Rescan). */
   refresh: () => Promise<void>;
@@ -187,7 +185,12 @@ function mergeRemoteDevice(
     holds.globalVolumeHoldUntil > holds.now ||
     (holds.volumeHoldUntil[incoming.id] ?? 0) > holds.now;
   if (holdMute) {
-    next = { ...next, muted: previous.muted, volume: previous.volume };
+    next = {
+      ...next,
+      muted: previous.muted,
+      volume: previous.volume,
+      mute_volume: previous.mute_volume,
+    };
   } else if (holdVolume) {
     next = { ...next, volume: previous.volume };
   }
@@ -240,34 +243,17 @@ function pruneById(
   return dropped ? next : entries;
 }
 
-function pruneKeys(
-  entries: Record<string, number>,
-  liveIds: Set<string>,
-): Record<string, number> {
-  const next: Record<string, number> = {};
-  let dropped = false;
-  for (const [id, value] of Object.entries(entries)) {
-    if (liveIds.has(id)) next[id] = value;
-    else dropped = true;
-  }
-  return dropped ? next : entries;
-}
-
-/** Hold maps and volume memory, trimmed to the devices the server still reports. */
+/** Hold maps, trimmed to the devices the server still reports. */
 function prunedHolds(
   state: FleetState,
   incoming: PlayerStatus[],
-): Pick<
-  FleetState,
-  'volumeHoldUntil' | 'playbackHoldUntil' | 'muteHoldUntil' | 'lastAudibleVolume'
-> {
+): Pick<FleetState, 'volumeHoldUntil' | 'playbackHoldUntil' | 'muteHoldUntil'> {
   const liveIds = new Set(incoming.map((d) => d.id));
   const now = Date.now();
   return {
     volumeHoldUntil: pruneById(state.volumeHoldUntil, liveIds, now),
     playbackHoldUntil: pruneById(state.playbackHoldUntil, liveIds, now),
     muteHoldUntil: pruneById(state.muteHoldUntil, liveIds, now),
-    lastAudibleVolume: pruneKeys(state.lastAudibleVolume, liveIds),
   };
 }
 
@@ -301,14 +287,6 @@ function releaseHold(entries: Record<string, number>, ids: Iterable<string>): Re
   const next = { ...entries };
   for (const id of ids) delete next[id];
   return next;
-}
-
-/** Volume to restore on unmute: the last audible level, else the current one, else a default. */
-function unmuteVolume(state: FleetState, device: PlayerStatus): number {
-  return (
-    state.lastAudibleVolume[device.id] ??
-    (device.volume > 0 ? device.volume : DEFAULT_UNMUTE_VOLUME)
-  );
 }
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -406,7 +384,6 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   houseSession: LIVE_HOUSE_SESSION,
   globalVolumeHoldUntil: 0,
   syncHoldUntil: 0,
-  lastAudibleVolume: {},
 
   setFleet: (devices, discoveredAt = null) =>
     set((state) => ({
@@ -429,16 +406,9 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     }),
 
   patchDevice: (deviceId, patch) =>
-    set((state) => {
-      const lastAudibleVolume = { ...state.lastAudibleVolume };
-      if (typeof patch.volume === 'number' && patch.volume > 0) {
-        lastAudibleVolume[deviceId] = patch.volume;
-      }
-      return {
-        lastAudibleVolume,
-        devices: state.devices.map((d) => (d.id === deviceId ? { ...d, ...patch } : d)),
-      };
-    }),
+    set((state) => ({
+      devices: state.devices.map((d) => (d.id === deviceId ? { ...d, ...patch } : d)),
+    })),
 
   holdVolume: (deviceId, ms = VOLUME_HOLD_MS) =>
     set((state) => ({
@@ -522,15 +492,18 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   setHealth: (health) => set({ health }),
   setToast: (toast) => set({ toast }),
 
+  // Muted players are skipped here and by the server: a BluOS level write unmutes.
   setAllVolumesLocal: (level) =>
     set((state) => ({
-      devices: state.devices.map((d) => ({ ...d, volume: level })),
+      devices: state.devices.map((d) => (d.muted ? d : { ...d, volume: level })),
     })),
 
   setVolumesLocal: (level, deviceIds) => {
     const idSet = new Set(deviceIds);
     set((state) => ({
-      devices: state.devices.map((d) => (idSet.has(d.id) ? { ...d, volume: level } : d)),
+      devices: state.devices.map((d) =>
+        idSet.has(d.id) && !d.muted ? { ...d, volume: level } : d,
+      ),
     }));
   },
 
@@ -556,11 +529,6 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     try {
       const result = await api.setFleetVolume(clamped, scoped ? ids : undefined);
       paint();
-      if (clamped > 0) {
-        set((state) => ({
-          lastAudibleVolume: setEach(state.lastAudibleVolume, ids, clamped),
-        }));
-      }
       if (result.failed > 0) set({ toast: partialToast(`Volume ${clamped}`, result) });
     } catch (err) {
       set({
@@ -579,28 +547,11 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   toggleMute: async (deviceId) => {
     const device = get().devices.find((d) => d.id === deviceId);
     if (!device) return;
-
-    if (device.muted) {
-      await get().control(
-        deviceId,
-        () => api.setMute(deviceId, false),
-        { muted: false, volume: unmuteVolume(get(), device) },
-      );
-      return;
-    }
-
-    if (device.volume > 0) {
-      set((state) => ({
-        lastAudibleVolume: {
-          ...state.lastAudibleVolume,
-          [deviceId]: device.volume,
-        },
-      }));
-    }
+    const mute = !device.muted;
     await get().control(
       deviceId,
-      () => api.setMute(deviceId, true),
-      { muted: true, volume: 0 },
+      () => api.setMute(deviceId, mute),
+      mute ? mutedPatch(device) : unmutedPatch(device),
     );
   },
 
@@ -612,25 +563,17 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     set((state) => {
       const until = Date.now() + MUTE_HOLD_MS;
       const ids = state.devices.map((d) => d.id);
-      const audible = state.devices.filter((d) => d.volume > 0);
       return {
-        lastAudibleVolume: mute
-          ? { ...state.lastAudibleVolume, ...Object.fromEntries(audible.map((d) => [d.id, d.volume])) }
-          : state.lastAudibleVolume,
         muteHoldUntil: setEach(state.muteHoldUntil, ids, until),
         volumeHoldUntil: setEach(state.volumeHoldUntil, ids, until),
-        devices: state.devices.map((d) =>
-          mute
-            ? { ...d, muted: true, volume: 0 }
-            : { ...d, muted: false, volume: unmuteVolume(state, d) },
-        ),
+        devices: state.devices.map((d) => ({ ...d, ...(mute ? mutedPatch(d) : unmutedPatch(d)) })),
       };
     });
 
     // A failure releases the holds as well, so server truth returns.
     await runFleetAction(set, `Fleet ${mute ? 'mute' : 'unmute'}`, () => api.fleetMute(mute), () =>
       set((state) => ({
-        devices: revertFields(state.devices, before, ['muted', 'volume']),
+        devices: revertFields(state.devices, before, ['muted', 'volume', 'mute_volume']),
         muteHoldUntil: releaseHold(state.muteHoldUntil, before.keys()),
         volumeHoldUntil: releaseHold(state.volumeHoldUntil, before.keys()),
       })),

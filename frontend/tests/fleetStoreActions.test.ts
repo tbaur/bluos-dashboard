@@ -109,7 +109,6 @@ beforeEach(() => {
     houseSession: LIVE_HOUSE_SESSION,
     globalVolumeHoldUntil: 0,
     syncHoldUntil: 0,
-    lastAudibleVolume: {},
   });
   getSync.mockResolvedValue({ groups: [], standalone_ids: [] });
   getFleetHealth.mockResolvedValue(health);
@@ -120,7 +119,7 @@ afterEach(() => {
 });
 
 describe('setFleetVolume', () => {
-  it('paints every player, holds the global volume, and remembers it for unmute', async () => {
+  it('paints every player and holds the global volume', async () => {
     store().setFleet([base, second]);
     setFleetVolume.mockResolvedValue(result(2, 0));
 
@@ -129,7 +128,21 @@ describe('setFleetVolume', () => {
     expect(setFleetVolume).toHaveBeenCalledWith(55, undefined);
     expect(store().devices.map((d) => d.volume)).toEqual([55, 55]);
     expect(store().globalVolumeHoldUntil).toBeGreaterThan(Date.now());
-    expect(store().lastAudibleVolume).toEqual({ 'player-1': 55, 'player-2': 55 });
+    expect(store().toast).toBeNull();
+  });
+
+  it('leaves muted players muted at 0, for whole-fleet and scoped calls', async () => {
+    const muted = { ...second, volume: 0, muted: true, mute_volume: 40 };
+    store().setFleet([base, muted]);
+    setFleetVolume.mockResolvedValue({ ...result(1, 0), skipped_muted: 1 });
+
+    await store().setFleetVolume(50);
+    expect(device('player-1').volume).toBe(50);
+    expect(device('player-2')).toMatchObject({ muted: true, volume: 0, mute_volume: 40 });
+
+    await store().setFleetVolume(45, ['player-1', 'player-2']);
+    expect(device('player-1').volume).toBe(45);
+    expect(device('player-2')).toMatchObject({ muted: true, volume: 0, mute_volume: 40 });
     expect(store().toast).toBeNull();
   });
 
@@ -166,24 +179,24 @@ describe('setFleetVolume', () => {
 });
 
 describe('toggleMute', () => {
-  it('mutes to zero and restores the last audible volume on unmute', async () => {
+  it('mutes to zero like BluOS reports, and unmutes to the pre-mute level', async () => {
     store().setFleet([base]);
     setMute.mockResolvedValue(undefined);
 
     await store().toggleMute('player-1');
-    expect(device('player-1')).toMatchObject({ muted: true, volume: 0 });
+    expect(device('player-1')).toMatchObject({ muted: true, volume: 0, mute_volume: 30 });
     expect(setMute).toHaveBeenLastCalledWith('player-1', true);
 
     await store().toggleMute('player-1');
-    expect(device('player-1')).toMatchObject({ muted: false, volume: 30 });
+    expect(device('player-1')).toMatchObject({ muted: false, volume: 30, mute_volume: null });
     expect(setMute).toHaveBeenLastCalledWith('player-1', false);
   });
 
-  it('unmutes a player that was already silent to the default level', async () => {
-    store().setFleet([{ ...base, muted: true, volume: 0 }]);
+  it('unmutes to the level the player reported, not a guess', async () => {
+    store().setFleet([{ ...base, muted: true, volume: 0, mute_volume: 45 }]);
     setMute.mockResolvedValue(undefined);
     await store().toggleMute('player-1');
-    expect(device('player-1').volume).toBe(20);
+    expect(device('player-1')).toMatchObject({ muted: false, volume: 45 });
   });
 
   it('puts the player back and names the request when mute fails', async () => {
@@ -204,8 +217,7 @@ describe('toggleMute', () => {
 
 describe('house-wide actions', () => {
   it('unmute all restores each player and reports partial failure', async () => {
-    store().setFleet([{ ...base, muted: true, volume: 0 }, second]);
-    useFleetStore.setState({ lastAudibleVolume: { 'player-1': 25 } });
+    store().setFleet([{ ...base, muted: true, volume: 0, mute_volume: 25 }, second]);
     fleetMute.mockResolvedValue(result(1, 1));
 
     await store().fleetMuteAll(false);

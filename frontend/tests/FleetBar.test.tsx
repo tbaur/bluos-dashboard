@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FleetBar } from '@/components/GlobalVolumeControl';
 import { playerArtSrc } from '@/lib/artwork';
 import type { PlayerStatus, SyncState } from '@/api/types';
@@ -323,6 +323,95 @@ describe('FleetBar house remote art', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Set NAD CI S2 volume to 42' }));
     await waitFor(() => expect(setFleetVolume).toHaveBeenCalledWith(42, ['2']));
+  });
+
+  it('keeps a group linked when one room is muted, and names the muted room', () => {
+    const ciS2 = { model: 'CI S2', brand: 'NAD', full_model: 'NAD CI S2' };
+    useFleetStore.setState({
+      devices: [
+        player({ id: '1', name: 'Zone One', ...ciS2, volume: 50 }),
+        player({ id: '2', name: 'Zone Two', ...ciS2, volume: 0, muted: true, mute_volume: 60 }),
+        player({ id: '3', name: 'Zone Three', ...ciS2, volume: 50 }),
+      ],
+      sync: null,
+    });
+
+    renderBar();
+    const panel = screen.getByRole('region', { name: 'NAD CI S2' });
+    expect(panel).toHaveTextContent('NAD CI S2 → 50');
+    expect(panel).toHaveTextContent('linked');
+    expect(panel).not.toHaveTextContent(/re-sync/i);
+    expect(within(panel).getByText('1 muted')).toHaveAttribute('title', 'Stays muted: Zone Two');
+    expect(screen.getByLabelText('Set volume on NAD CI S2 zones')).toHaveValue('50');
+  });
+
+  it('disables a group slider when every room in it is muted', () => {
+    const ciS2 = { model: 'CI S2', brand: 'NAD', full_model: 'NAD CI S2' };
+    useFleetStore.setState({
+      devices: [
+        player({ id: '1', name: 'Zone One', ...ciS2, volume: 0, muted: true, mute_volume: 50 }),
+      ],
+      sync: null,
+    });
+
+    renderBar();
+    expect(screen.getByRole('region', { name: 'NAD CI S2' })).toHaveTextContent('All muted');
+    expect(screen.getByLabelText('Set volume on NAD CI S2 zones')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Set NAD CI S2 volume to 50' })).toBeDisabled();
+  });
+
+  describe('group slider writes', () => {
+    const ciS2 = { model: 'CI S2', brand: 'NAD', full_model: 'NAD CI S2' };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function setup() {
+      const setFleetVolume = vi.fn<(level: number, deviceIds?: string[]) => Promise<void>>(
+        () => new Promise<void>((resolve) => window.setTimeout(resolve, 30)),
+      );
+      useFleetStore.setState({
+        devices: [
+          player({ id: '1', name: 'Zone One', ...ciS2, volume: 40 }),
+          player({ id: '2', name: 'Zone Two', ...ciS2, volume: 40 }),
+        ],
+        sync: null,
+        setFleetVolume,
+      });
+      renderBar();
+      return { setFleetVolume, slider: screen.getByLabelText('Set volume on NAD CI S2 zones') };
+    }
+
+    it('sends a level once when the slider is released right after the debounce', async () => {
+      const { setFleetVolume, slider } = setup();
+      fireEvent.pointerDown(slider);
+      fireEvent.change(slider, { target: { value: '45' } });
+      await vi.advanceTimersByTimeAsync(90);
+      fireEvent.pointerUp(slider);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(setFleetVolume).toHaveBeenCalledTimes(1);
+      expect(setFleetVolume).toHaveBeenCalledWith(45, ['1', '2']);
+    });
+
+    it('keeps the dragged level when an earlier write finishes mid-drag', async () => {
+      const { setFleetVolume, slider } = setup();
+      fireEvent.pointerDown(slider);
+      fireEvent.change(slider, { target: { value: '45' } });
+      // The 45 write is still in flight when the finger moves on to 48.
+      await vi.advanceTimersByTimeAsync(90);
+      fireEvent.change(slider, { target: { value: '48' } });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(slider).toHaveValue('48');
+      expect(setFleetVolume.mock.calls.map(([level]) => level)).toEqual([45, 48]);
+      fireEvent.pointerUp(slider);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(setFleetVolume).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('keeps NAD C658 off house sliders and out of Bluesound writes', async () => {

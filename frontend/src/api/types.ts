@@ -36,8 +36,11 @@ export interface PlayerStatus {
   state: PlayerState;
   service: string;
   service_id: string;
+  /** BluOS reports 0 while the player is muted. */
   volume: number;
   muted: boolean;
+  /** BluOS muteVolume: the level a muted player returns to on unmute. Null while unmuted. */
+  mute_volume?: number | null;
   db: string;
   fw: string;
   master: string;
@@ -240,6 +243,8 @@ export interface FleetActionResult {
   device_id: string;
   name: string;
   ok: boolean;
+  /** Volume only: muted players get no level write, because BluOS unmutes on any level change. */
+  skipped_muted?: boolean;
 }
 
 export interface FleetActionResponse {
@@ -251,6 +256,7 @@ export interface FleetActionResponse {
 
 export interface FleetVolumeResponse extends Omit<FleetActionResponse, 'action'> {
   level: number;
+  skipped_muted?: number;
 }
 
 export interface SyncEnableResponse extends FleetActionResponse {

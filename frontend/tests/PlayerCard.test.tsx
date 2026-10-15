@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlayerStatus } from '@/api/types';
@@ -59,6 +59,8 @@ const sample: PlayerStatus = {
   consecutive_failures: 0,
   last_seen: 1,
 };
+
+const zone: PlayerStatus = { ...sample, id: 'zone-one', name: 'Zone One', ip: '192.168.1.30' };
 
 describe('PlayerRow', () => {
   beforeEach(() => {
@@ -135,6 +137,53 @@ describe('PlayerRow', () => {
     expect(screen.queryByText(/Follows/)).not.toBeInTheDocument();
     expect(screen.queryByText('synced')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+  });
+
+  it('follows the server level after Mute instead of pinning the slider', () => {
+    useFleetStore.setState({ devices: [zone] });
+    render(
+      <MemoryRouter>
+        <PlayerRow deviceId={zone.id} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
+    act(() => {
+      useFleetStore.setState({ devices: [{ ...zone, volume: 45, muted: false }] });
+    });
+    expect(screen.getByLabelText('Volume for Zone One')).toHaveValue('45');
+  });
+
+  it('shows a muted room at 0 with the level it returns to on unmute', () => {
+    useFleetStore.setState({ devices: [{ ...zone, volume: 0, muted: true, mute_volume: 50 }] });
+    render(
+      <MemoryRouter>
+        <PlayerRow deviceId={zone.id} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByLabelText('Volume for Zone One')).toHaveValue('0');
+    expect(screen.getByRole('button', { name: 'Unmute' })).toHaveAttribute(
+      'title',
+      'Unmute (returns to 50)',
+    );
+  });
+
+  it("unmutes a muted room when its own slider moves, as BluOS does", async () => {
+    useFleetStore.setState({ devices: [{ ...zone, volume: 0, muted: true, mute_volume: 50 }] });
+    render(
+      <MemoryRouter>
+        <PlayerRow deviceId={zone.id} />
+      </MemoryRouter>,
+    );
+    const slider = screen.getByLabelText('Volume for Zone One');
+    fireEvent.pointerDown(slider);
+    fireEvent.change(slider, { target: { value: '40' } });
+    fireEvent.pointerUp(slider);
+    await waitFor(() => expect(setVolume).toHaveBeenLastCalledWith('zone-one', 40));
+    expect(useFleetStore.getState().devices[0]).toMatchObject({
+      muted: false,
+      volume: 40,
+      mute_volume: null,
+    });
   });
 
   it('does not mark a NAD C658 as volume-linked with Bluesound rooms', () => {

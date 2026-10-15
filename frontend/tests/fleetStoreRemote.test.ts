@@ -78,7 +78,6 @@ function reset() {
     houseSession: LIVE_HOUSE_SESSION,
     globalVolumeHoldUntil: 0,
     syncHoldUntil: 0,
-    lastAudibleVolume: {},
   });
 }
 
@@ -156,7 +155,7 @@ describe('fleetStore remote sync', () => {
     expect(useFleetStore.getState().devices[0].volume).toBe(0);
   });
 
-  it('drops hold and volume memory for devices that left the fleet', () => {
+  it('drops holds for devices that left the fleet', () => {
     const second = { ...sample, id: 'player-2', volume: 30 };
     useFleetStore.getState().setFleet([sample, second]);
     useFleetStore.getState().holdVolume('player-2', 10_000);
@@ -165,7 +164,17 @@ describe('fleetStore remote sync', () => {
 
     useFleetStore.getState().setFleet([sample]);
     expect(useFleetStore.getState().volumeHoldUntil['player-2']).toBeUndefined();
-    expect(useFleetStore.getState().lastAudibleVolume['player-2']).toBeUndefined();
+  });
+
+  it('keeps the unmute level during a mute hold', () => {
+    useFleetStore.getState().setFleet([{ ...sample, volume: 0, muted: true, mute_volume: 50 }]);
+    useFleetStore.getState().holdMute('player-1', 10_000);
+    useFleetStore.getState().setFleet([{ ...sample, volume: 50, muted: false, mute_volume: null }]);
+    expect(useFleetStore.getState().devices[0]).toMatchObject({
+      muted: true,
+      volume: 0,
+      mute_volume: 50,
+    });
   });
 
   it('reverts mute-all when the API call fails', async () => {

@@ -36,6 +36,8 @@ class PlayerStatus(BaseModel):
     service_id: str = ""
     volume: int = 0
     muted: bool = False
+    # BluOS muteVolume: the level a muted player returns to on unmute. None while unmuted.
+    mute_volume: int | None = None
     db: str = ""
     fw: str = ""
     master: str = ""
@@ -234,12 +236,15 @@ class FleetVolumeResult(BaseModel):
     device_id: str
     name: str
     ok: bool
+    # Muted players get no level write, because BluOS unmutes on any level change.
+    skipped_muted: bool = False
 
 
 class FleetVolumeResponse(BaseModel):
     level: int
     succeeded: int
     failed: int
+    skipped_muted: int = 0
     results: list[FleetVolumeResult]
 
 

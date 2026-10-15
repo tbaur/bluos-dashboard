@@ -8,6 +8,7 @@ import type {
   QueueResponse,
   UpgradeStatus,
 } from '@/api/types';
+import { ownVolumePatch } from '@/lib/mute';
 import { useFleetStore } from '@/store/fleetStore';
 
 /** Debounce for the device volume slider before the command is sent. */
@@ -159,12 +160,15 @@ export function useDeviceVolumeCommit(deviceId: string | undefined) {
 
   return (level: number) => {
     if (!deviceId) return;
-    useFleetStore.getState().holdVolume(deviceId);
-    patchDevice(deviceId, { volume: level });
+    const store = useFleetStore.getState();
+    const patch = ownVolumePatch(store.devices.find((d) => d.id === deviceId), level);
+    store.holdVolume(deviceId);
+    if (patch.muted !== undefined) store.holdMute(deviceId);
+    patchDevice(deviceId, patch);
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       timer.current = undefined;
-      void control(deviceId, () => api.setVolume(deviceId, level), { volume: level });
+      void control(deviceId, () => api.setVolume(deviceId, level), patch);
     }, VOLUME_COMMIT_MS);
   };
 }

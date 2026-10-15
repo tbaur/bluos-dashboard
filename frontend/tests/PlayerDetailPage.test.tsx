@@ -134,7 +134,6 @@ describe('PlayerDetailPage maintenance', () => {
       playbackHoldUntil: {},
       globalVolumeHoldUntil: 0,
       syncHoldUntil: 0,
-      lastAudibleVolume: {},
       control: vi.fn(async (_id, action) => {
         await action();
       }),

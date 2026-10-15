@@ -10,6 +10,7 @@ import { VolumeNudgeButtons } from '@/components/VolumeNudgeButtons';
 import { formatDeviceHost } from '@/lib/endpoint';
 import { formatDropLine, formatRelativeAge, latestDrop, presenceSegments } from '@/lib/health';
 import { META_SEP } from '@/lib/meta';
+import { unmuteTitle } from '@/lib/mute';
 import { formatPlayerUptime } from '@/lib/uptime';
 import { useFleetStore } from '@/store/fleetStore';
 
@@ -71,7 +72,12 @@ export function DeviceMetricsPanel(props: DeviceMetricsPanelProps) {
             onChange={(e) => onVolume(Number(e.target.value))}
           />
           <span className="volume-value">{device.volume}</span>
-          <button type="button" className="btn" onClick={onToggleMute}>
+          <button
+            type="button"
+            className="btn"
+            title={unmuteTitle(device)}
+            onClick={onToggleMute}
+          >
             {device.muted ? 'Unmute' : 'Mute'}
           </button>
         </div>
