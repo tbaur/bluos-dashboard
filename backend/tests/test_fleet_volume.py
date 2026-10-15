@@ -200,6 +200,62 @@ async def test_fleet_mute_skips_offline_rooms(
 
 
 @pytest.mark.asyncio
+async def test_fleet_volume_leaves_muted_rooms_muted(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    players = [
+        PlayerStatus(id="zone-one", ip="192.168.1.10", name="Zone One", status="online", volume=60),
+        PlayerStatus(
+            id="zone-two",
+            ip="192.168.1.11",
+            name="Zone Two",
+            status="online",
+            volume=0,
+            muted=True,
+            mute_volume=60,
+        ),
+    ]
+    app, client, _, _ = await app_with_players(settings, monkeypatch, players=players)
+    client.set_volume = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        response = await http.post("/api/v1/fleet/volume", json={"level": 50})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["succeeded"] == 1
+    assert body["failed"] == 0
+    assert body["skipped_muted"] == 1
+    skipped = {r["device_id"]: r["skipped_muted"] for r in body["results"]}
+    assert skipped == {"zone-one": False, "zone-two": True}
+    client.set_volume.assert_awaited_once_with("192.168.1.10:11000", 50)
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_fleet_volume_with_every_room_muted_sends_nothing(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    players = [
+        PlayerStatus(
+            id="zone-one", ip="192.168.1.10", name="Zone One", status="online", muted=True
+        ),
+    ]
+    app, client, _, _ = await app_with_players(settings, monkeypatch, players=players)
+    client.set_volume = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        response = await http.post(
+            "/api/v1/fleet/volume", json={"level": 50, "device_ids": ["zone-one"]}
+        )
+    assert response.status_code == 200
+    assert response.json()["skipped_muted"] == 1
+    client.set_volume.assert_not_awaited()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_list_and_sync_reads_do_not_browse(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:

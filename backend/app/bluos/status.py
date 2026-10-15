@@ -70,17 +70,16 @@ class BluOSStatusMixin(BluOSTransport):
         battery = battery_elem.attrib.get("level") if battery_elem is not None else None
         # Per-player volume lives on SyncStatus. For synced secondaries, /Status
         # volume is the group/primary level and must not be trusted.
-        volume: int | None = None
-        volume_raw = attr(root, "volume")
-        if volume_raw not in ("", None):
-            try:
-                volume = max(0, min(100, int(volume_raw)))
-            except ValueError:
-                volume = None
+        volume = self._parse_level(attr(root, "volume"))
+        mute_volume = self._parse_level(attr(root, "muteVolume"))
         mute_raw = attr(root, "mute")
         muted: bool | None = None
         if mute_raw not in ("", None):
             muted = mute_raw in {"1", "true", "True"}
+        elif volume is not None:
+            # API v1.7 documents a mute attribute here, but firmware 4.16 omits it
+            # and only adds muteVolume (with volume="0") while the player is muted.
+            muted = mute_volume is not None and volume == 0
         return {
             "name": attr(root, "name") or "Unknown",
             "model": attr(root, "modelName") or attr(root, "brand") or "",
@@ -96,6 +95,7 @@ class BluOSStatusMixin(BluOSTransport):
             "battery": battery,
             "volume": volume,
             "muted": muted,
+            "mute_volume": mute_volume,
             "etag": attr(root, "etag"),
             "sync_stat": attr(root, "syncStat") or text(root, "syncStat"),
         }
@@ -117,6 +117,16 @@ class BluOSStatusMixin(BluOSTransport):
             return int(float(raw))
         except (TypeError, ValueError):
             return default
+
+    @staticmethod
+    def _parse_level(raw: str | None) -> int | None:
+        """A 0..100 volume level, or None when the field is absent or not a number."""
+        if raw in ("", None):
+            return None
+        try:
+            return max(0, min(100, int(raw)))
+        except ValueError:
+            return None
 
     def _parse_status(
         self,
@@ -142,16 +152,11 @@ class BluOSStatusMixin(BluOSTransport):
             volume = 0
         mute_raw = text(root, "mute", "0")
         image = text(root, "image") or text(root, "currentImage")
-        group_volume_raw = text(root, "groupVolume")
-        group_volume: int | None = None
-        if group_volume_raw:
-            try:
-                group_volume = max(0, min(100, int(group_volume_raw)))
-            except ValueError:
-                group_volume = None
+        group_volume = self._parse_level(text(root, "groupVolume"))
         return {
             "volume": max(0, min(100, volume)),
             "muted": mute_raw in {"1", "true", "True"},
+            "mute_volume": self._parse_level(text(root, "muteVolume")),
             "state": text(root, "state", "stop") or "stop",
             "service": display_service,
             "service_id": service,
@@ -200,6 +205,7 @@ class BluOSStatusMixin(BluOSTransport):
         player.sync_role = self.parse_sync_role(player.master, player.slaves, endpoint)
         if sync.get("volume") is not None:
             player.volume = sync["volume"]
+            player.mute_volume = sync.get("mute_volume")
         if sync.get("muted") is not None:
             player.muted = sync["muted"]
         if not device_id:
@@ -215,6 +221,7 @@ class BluOSStatusMixin(BluOSTransport):
         if overlay_volume:
             player.volume = status.get("volume", player.volume)
             player.muted = status.get("muted", player.muted)
+            player.mute_volume = status.get("mute_volume")
         player.state = status.get("state", "stop")
         player.service = status.get("service", "")
         player.service_id = status.get("service_id", "")

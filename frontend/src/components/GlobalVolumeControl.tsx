@@ -3,6 +3,8 @@ import type { PlayerStatus } from '@/api/types';
 import { HouseRemote } from '@/components/HouseRemote';
 import { VolumeNudgeButtons } from '@/components/VolumeNudgeButtons';
 import { partitionVolumeGroups } from '@/lib/deviceGroups';
+import { createLatestValueSender, type LatestValueSender } from '@/lib/latestValueSender';
+import { audibleDevices } from '@/lib/mute';
 import { DRAG_VOLUME_HOLD_MS, useFleetStore } from '@/store/fleetStore';
 
 const BLUESOUND_VOLUME_LEVELS = [20, 48, 60] as const;
@@ -16,6 +18,17 @@ function medianVolume(volumes: number[]): number {
     return Math.round((sorted[mid - 1] + sorted[mid]) / 2);
   }
   return sorted[mid];
+}
+
+/** "N muted" next to a group slider: those rooms keep their mute when the slider moves. */
+function MutedPill({ devices }: { devices: PlayerStatus[] }) {
+  if (devices.length === 0) return null;
+  const names = devices.map((d) => d.name).join(', ');
+  return (
+    <span className="volume-muted-pill" title={`Stays muted: ${names}`}>
+      {devices.length} muted
+    </span>
+  );
 }
 
 type GroupVolumePanelProps = {
@@ -39,54 +52,63 @@ function GroupVolumePanel({
   const holdVolumes = useFleetStore((s) => s.holdVolumes);
   const commitTimer = useRef<number | undefined>(undefined);
   const latestLevel = useRef(0);
-  const deviceIdsRef = useRef<string[]>([]);
-  const flushGeneration = useRef(0);
+  const audibleIdsRef = useRef<string[]>([]);
+  const senderRef = useRef<LatestValueSender<number> | null>(null);
   const draggingRef = useRef(false);
+  const movedRef = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [pending, setPending] = useState(false);
   const [dragDraft, setDragDraft] = useState<number | null>(null);
 
-  const deviceIds = useMemo(() => devices.map((d) => d.id), [devices]);
+  const audible = useMemo(() => audibleDevices(devices), [devices]);
+  // The backend also skips muted rooms, but its cache can lag a Mute click just made here.
   useEffect(() => {
-    deviceIdsRef.current = deviceIds;
-  }, [deviceIds]);
+    audibleIdsRef.current = audible.map((d) => d.id);
+  }, [audible]);
 
-  const fleetMedian = medianVolume(devices.map((d) => d.volume));
+  const mutedRooms = devices.filter((d) => d.muted);
+  const allMuted = audible.length === 0;
+  const fleetMedian = medianVolume(audible.map((d) => d.volume));
   const display = dragDraft ?? fleetMedian;
-  const volumesMatch =
-    devices.length > 0 && devices.every((d) => d.volume === devices[0].volume);
+  const volumesMatch = !allMuted && audible.every((d) => d.volume === audible[0].volume);
+  const controlsDisabled = pending || allMuted;
   const headingId = `${inputId}-heading`;
 
   useEffect(() => {
     latestLevel.current = display;
   }, [display]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const sender = createLatestValueSender<number>({
+      send: (level) => {
+        const ids = audibleIdsRef.current.slice();
+        holdVolumes(ids, DRAG_VOLUME_HOLD_MS);
+        return setFleetVolume(level, ids);
+      },
+      onIdle: () => {
+        setPending(false);
+        // Mid-drag the thumb must stay where the finger is, not jump to the old median.
+        if (!draggingRef.current) setDragDraft(null);
+      },
+    });
+    senderRef.current = sender;
+    return () => {
       if (commitTimer.current) window.clearTimeout(commitTimer.current);
-      flushGeneration.current += 1;
-    },
-    [],
-  );
+      sender.cancel();
+    };
+  }, [holdVolumes, setFleetVolume]);
 
   const flush = (level: number) => {
-    const ids = deviceIdsRef.current.slice();
-    if (ids.length === 0) return;
-    const generation = ++flushGeneration.current;
+    if (audibleIdsRef.current.length === 0) return;
     setPending(true);
-    holdVolumes(ids, DRAG_VOLUME_HOLD_MS);
-    void setFleetVolume(level, ids).finally(() => {
-      // Only the latest in-flight flush owns the Syncing… indicator.
-      if (generation !== flushGeneration.current) return;
-      setPending(false);
-      setDragDraft(null);
-    });
+    holdVolumes(audibleIdsRef.current, DRAG_VOLUME_HOLD_MS);
+    senderRef.current?.push(level);
   };
 
   const scheduleFlush = (level: number) => {
     latestLevel.current = level;
     setDragDraft(level);
-    holdVolumes(deviceIdsRef.current, DRAG_VOLUME_HOLD_MS);
+    holdVolumes(audibleIdsRef.current, DRAG_VOLUME_HOLD_MS);
     if (commitTimer.current) window.clearTimeout(commitTimer.current);
     commitTimer.current = window.setTimeout(() => {
       commitTimer.current = undefined;
@@ -102,7 +124,9 @@ function GroupVolumePanel({
       window.clearTimeout(commitTimer.current);
       commitTimer.current = undefined;
     }
-    flush(latestLevel.current);
+    // A tap without movement must not level every room to the median.
+    if (movedRef.current) flush(latestLevel.current);
+    else setDragDraft(null);
   };
 
   if (devices.length === 0) return null;
@@ -114,6 +138,8 @@ function GroupVolumePanel({
         <span className="card-meta">
           {pending ? (
             'Syncing…'
+          ) : allMuted ? (
+            'All muted'
           ) : dragging ? (
             <>
               {scopeLabel} → {display}
@@ -141,12 +167,13 @@ function GroupVolumePanel({
               </button>
             </>
           )}
+          {allMuted ? null : <MutedPill devices={mutedRooms} />}
         </span>
       </div>
       <div className="volume-row global-volume-row">
         <VolumeNudgeButtons
           value={display}
-          disabled={pending}
+          disabled={controlsDisabled}
           onChange={(level) => scheduleFlush(level)}
         />
         <label htmlFor={inputId}>Vol</label>
@@ -156,20 +183,25 @@ function GroupVolumePanel({
           min={0}
           max={100}
           value={display}
+          disabled={allMuted}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={display}
           aria-label={ariaLabel}
           onPointerDown={() => {
             draggingRef.current = true;
+            movedRef.current = false;
             setDragging(true);
             setDragDraft(fleetMedian);
             latestLevel.current = fleetMedian;
-            holdVolumes(deviceIdsRef.current, DRAG_VOLUME_HOLD_MS);
+            holdVolumes(audibleIdsRef.current, DRAG_VOLUME_HOLD_MS);
           }}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-          onChange={(e) => scheduleFlush(Number(e.target.value))}
+          onChange={(e) => {
+            movedRef.current = true;
+            scheduleFlush(Number(e.target.value));
+          }}
         />
         <span className="global-volume-value" title={`${display}%`}>
           {display}
@@ -182,7 +214,7 @@ function GroupVolumePanel({
               key={level}
               type="button"
               className="volume-level-chip"
-              disabled={pending}
+              disabled={controlsDisabled}
               aria-pressed={display === level}
               aria-label={`Set ${scopeLabel} volume to ${level}`}
               onClick={() => {

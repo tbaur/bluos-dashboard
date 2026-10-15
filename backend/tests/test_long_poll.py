@@ -15,7 +15,14 @@ from app.discovery.service import DiscoveryService
 from app.models import PlayerStatus, SyncRole
 from app.services.events import EventBus
 from app.services.poller import StatusPoller
-from tests.fixtures.xml_samples import STATUS, STATUS_GROUP_VOLUME, SYNC_STATUS, SYNC_STATUS_SLAVE
+from tests.fixtures.xml_samples import (
+    STATUS,
+    STATUS_GROUP_VOLUME,
+    STATUS_MUTED,
+    SYNC_STATUS,
+    SYNC_STATUS_MUTED,
+    SYNC_STATUS_SLAVE,
+)
 
 STATUS_SKIP = STATUS.replace(b'etag="2"', b'etag="3"').replace(b"Song Title", b"Next Song")
 STATUS_SYNC_CHANGED = STATUS.replace(b'etag="2"', b'etag="4"').replace(
@@ -118,6 +125,36 @@ async def test_syncstat_change_refetches_syncstatus(settings: Settings) -> None:
         assert sync_route.call_count == 1
         assert snap.sync_stat == "ss-2"
         assert snap.player.volume == 31
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_status_only_poll_picks_up_mute_and_unmute_level(settings: Settings) -> None:
+    respx.get(url__regex=r"http://192\.168\.1\.30:11010/Status.*").mock(
+        return_value=httpx.Response(200, content=STATUS_MUTED)
+    )
+    sync_route = respx.get("http://192.168.1.30:11010/SyncStatus").mock(
+        return_value=httpx.Response(200, content=SYNC_STATUS_MUTED)
+    )
+    previous = PlayerStatus(
+        id="p1", ip="192.168.1.30", port=11010, name="Zone One", status="online", volume=50
+    )
+    client = BluOSClient(settings)
+    try:
+        snap = await client.load_player(
+            "192.168.1.30:11010",
+            device_id="p1",
+            status_etag="e0",
+            sync_stat="281",
+            previous=previous,
+            long_poll_seconds=10,
+        )
+        assert sync_route.call_count == 0
+        assert snap.player.muted is True
+        assert snap.player.volume == 0
+        assert snap.player.mute_volume == 50
     finally:
         await client.aclose()
 

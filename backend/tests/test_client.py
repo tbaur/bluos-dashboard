@@ -20,8 +20,11 @@ from tests.fixtures.xml_samples import (
     STATUS,
     STATUS_CAPTURE_OPTICAL,
     STATUS_GROUP_VOLUME,
+    STATUS_MUTED,
     STATUS_TIDAL_CONNECT,
     SYNC_STATUS,
+    SYNC_STATUS_MUTED,
+    SYNC_STATUS_MUTED_DOCUMENTED,
     SYNC_STATUS_SLAVE,
 )
 
@@ -82,6 +85,60 @@ async def test_synced_slave_uses_syncstatus_volume_not_group_status(
         assert player.volume == 64
         assert player.state == "stream"
         assert player.track == "Track"
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("sync_xml", [SYNC_STATUS_MUTED, SYNC_STATUS_MUTED_DOCUMENTED])
+async def test_muted_player_reports_muted_and_its_unmute_level(
+    settings: Settings, sync_xml: bytes
+) -> None:
+    respx.get("http://192.168.1.30:11010/SyncStatus").mock(
+        return_value=httpx.Response(200, content=sync_xml)
+    )
+    respx.get("http://192.168.1.30:11010/Status").mock(
+        return_value=httpx.Response(200, content=STATUS_MUTED)
+    )
+    client = BluOSClient(settings)
+    try:
+        player = await client.get_player_status("192.168.1.30:11010", device_id="zone-one")
+        assert player.muted is True
+        assert player.volume == 0
+        assert player.mute_volume == 50
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_leftover_mute_volume_on_an_audible_player_is_not_muted(
+    settings: Settings,
+) -> None:
+    client = BluOSClient(settings)
+    try:
+        audible = SYNC_STATUS_MUTED.replace(b'volume="0"', b'volume="30"')
+        sync = client._parse_sync(audible, "192.168.1.30:11010")
+        assert sync["muted"] is False
+        assert sync["volume"] == 30
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_unmuted_player_has_no_unmute_level(settings: Settings) -> None:
+    respx.get("http://192.168.1.20:11000/SyncStatus").mock(
+        return_value=httpx.Response(200, content=SYNC_STATUS)
+    )
+    respx.get("http://192.168.1.20:11000/Status").mock(
+        return_value=httpx.Response(200, content=STATUS)
+    )
+    client = BluOSClient(settings)
+    try:
+        player = await client.get_player_status("192.168.1.20", device_id="zone-one")
+        assert player.muted is False
+        assert player.mute_volume is None
     finally:
         await client.aclose()
 

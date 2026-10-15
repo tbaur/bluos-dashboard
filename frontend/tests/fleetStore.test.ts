@@ -58,7 +58,6 @@ describe('fleetStore', () => {
       houseSession: LIVE_HOUSE_SESSION,
       globalVolumeHoldUntil: 0,
       syncHoldUntil: 0,
-      lastAudibleVolume: {},
     });
     useFleetStore.getState().beginHouseCatchup([]);
   });

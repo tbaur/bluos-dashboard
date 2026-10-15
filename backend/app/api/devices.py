@@ -132,6 +132,13 @@ async def toggle(device_id: str, state: StateDep) -> Response:
     return await run_control(state, device_id, "toggle", op)
 
 
+def _unmuted_level(player: PlayerStatus) -> int:
+    """A muted player reports volume 0; a nudge should start from its pre-mute level."""
+    if player.muted and player.mute_volume is not None:
+        return player.mute_volume
+    return player.volume
+
+
 @router.post("/devices/{device_id}/volume/adjust", status_code=204)
 async def volume_adjust(device_id: str, body: VolumeAdjustRequest, state: StateDep) -> Response:
     ip = await require_device(state, device_id)
@@ -140,9 +147,9 @@ async def volume_adjust(device_id: str, body: VolumeAdjustRequest, state: StateD
     live = await state.client.get_player_status(ip, device_id=device_id)
     cached = state.discovery.get_device(device_id)
     if live.status == "online":
-        current = live.volume
+        current = _unmuted_level(live)
     elif cached is not None:
-        current = cached.volume
+        current = _unmuted_level(cached)
     else:
         raise AppError(502, "bluos_status_failed", "Failed to read player volume")
 

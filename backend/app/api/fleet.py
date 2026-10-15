@@ -30,6 +30,7 @@ from app.models import (
     UpgradeStatus,
     VolumeRequest,
 )
+from app.state import AppState
 from app.validators import validate_device_id
 
 logger = logging.getLogger(__name__)
@@ -43,22 +44,41 @@ async def fleet_health(state: StateDep) -> FleetHealthResponse:
     return state.poller.health.snapshot()
 
 
-@router.post("/fleet/volume", response_model=FleetVolumeResponse)
-async def set_fleet_volume(body: VolumeRequest, state: StateDep) -> FleetVolumeResponse:
-    """Set volume on discovered players (optionally filtered by ``device_ids``)."""
-    if body.device_ids is not None:
-        if not body.device_ids:
-            raise AppError(400, "empty_device_ids", "device_ids must be omitted or non-empty")
-        for device_id in body.device_ids:
-            if not validate_device_id(device_id):
-                raise AppError(400, "invalid_device_id", "Device id format is invalid")
-        targets = state.discovery.control_devices(body.device_ids)
-        if not targets:
-            raise AppError(404, "no_devices", "No matching devices to control")
-    else:
+def _volume_targets(body: VolumeRequest, state: AppState) -> list[PlayerStatus]:
+    """Online players named by ``device_ids``, or every online player when omitted."""
+    if body.device_ids is None:
         targets = state.discovery.control_devices()
         if not targets:
             raise AppError(404, "no_devices", "No discovered devices to control")
+        return targets
+    if not body.device_ids:
+        raise AppError(400, "empty_device_ids", "device_ids must be omitted or non-empty")
+    for device_id in body.device_ids:
+        if not validate_device_id(device_id):
+            raise AppError(400, "invalid_device_id", "Device id format is invalid")
+    targets = state.discovery.control_devices(body.device_ids)
+    if not targets:
+        raise AppError(404, "no_devices", "No matching devices to control")
+    return targets
+
+
+@router.post("/fleet/volume", response_model=FleetVolumeResponse)
+async def set_fleet_volume(body: VolumeRequest, state: StateDep) -> FleetVolumeResponse:
+    """Set volume on discovered players (optionally filtered by ``device_ids``).
+
+    Muted players are left alone: a BluOS level write unmutes the player.
+    """
+    targets = _volume_targets(body, state)
+    muted = [device for device in targets if device.muted]
+    targets = [device for device in targets if not device.muted]
+    skipped = [
+        FleetVolumeResult(device_id=d.id, name=d.name, ok=True, skipped_muted=True)
+        for d in muted
+    ]
+    if not targets:
+        return FleetVolumeResponse(
+            level=body.level, succeeded=0, failed=0, skipped_muted=len(skipped), results=skipped
+        )
 
     level = body.level
     default_port = state.settings.bluos_port
@@ -95,6 +115,7 @@ async def set_fleet_volume(body: VolumeRequest, state: StateDep) -> FleetVolumeR
         extra={
             "action": "volume",
             "target_count": len(targets),
+            "skipped_muted": len(skipped),
             "scoped": bool(body.device_ids),
         },
     )
@@ -114,7 +135,8 @@ async def set_fleet_volume(body: VolumeRequest, state: StateDep) -> FleetVolumeR
         level=level,
         succeeded=succeeded,
         failed=failed,
-        results=list(results),
+        skipped_muted=len(skipped),
+        results=[*results, *skipped],
     )
 
 @router.post("/fleet/mute", response_model=FleetActionResponse)

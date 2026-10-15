@@ -1319,6 +1319,25 @@ button.volume-linked-pill-action:disabled {
   cursor: not-allowed;
 }
 
+.volume-muted-pill {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: 999px;
+  padding: 1px 6px;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.fleet-cell-volume[data-muted="true"] input[type="range"],
+.fleet-cell-volume[data-muted="true"] .volume-value {
+  opacity: 0.5;
+}
+
 .fleet-bar-panel-head .card-meta {
   display: inline-flex;
   align-items: center;

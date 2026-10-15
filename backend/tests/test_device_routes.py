@@ -97,6 +97,31 @@ async def test_device_volume_mute_adjust(
 
 
 @pytest.mark.asyncio
+async def test_volume_adjust_on_muted_room_starts_from_its_unmute_level(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    muted = PlayerStatus(
+        id="zone-one",
+        ip="192.168.1.30",
+        name="Zone One",
+        status="online",
+        volume=0,
+        muted=True,
+        mute_volume=45,
+    )
+    app, client, _, _ = await app_with_players(settings, monkeypatch, players=[muted])
+    client.adjust_volume = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    client.get_player_status = AsyncMock(return_value=muted)  # type: ignore[method-assign]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        response = await http.post("/api/v1/devices/zone-one/volume/adjust", json={"delta": 2})
+    assert response.status_code == 204
+    client.adjust_volume.assert_awaited_with("192.168.1.30:11000", 2, 45)
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_volume_adjust_interrupts_before_live_status(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
