@@ -1103,8 +1103,10 @@ a {
 }
 
 .fleet-row {
+  /* Four 3.4rem buttons ("Pause" runs a little wider), one 4.4rem mute button, four 6px gaps. */
+  --fleet-transport-width: 316px;
   display: grid;
-  grid-template-columns: minmax(260px, 1.15fr) minmax(220px, 1.35fr) 292px 188px;
+  grid-template-columns: minmax(260px, 1.15fr) minmax(220px, 1.35fr) var(--fleet-transport-width) 188px;
   align-items: start;
   column-gap: 18px;
   padding: 12px 16px;
@@ -1264,7 +1266,17 @@ a {
   display: flex;
   flex-wrap: nowrap;
   gap: 6px;
-  width: 292px;
+  width: var(--fleet-transport-width);
+}
+
+.fleet-cell-transport .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Wide enough for "Unmute", so toggling does not shift the other buttons. */
+.btn-mute {
+  min-width: 4.4rem;
 }
 
 .fleet-cell-volume {
@@ -1431,7 +1443,7 @@ button.volume-linked-pill-action:disabled {
 
 @media (max-width: 1100px) {
   .fleet-row {
-    grid-template-columns: minmax(220px, 1.1fr) minmax(180px, 1.2fr) 292px 168px;
+    grid-template-columns: minmax(220px, 1.1fr) minmax(180px, 1.2fr) var(--fleet-transport-width) 168px;
   }
 }
 

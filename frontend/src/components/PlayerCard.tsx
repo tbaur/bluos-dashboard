@@ -141,7 +141,7 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
   const muteButton = (
     <button
       type="button"
-      className="btn btn-compact"
+      className="btn btn-compact btn-mute"
       title={unmuteTitle(device)}
       onClick={onMuteClick}
     >
