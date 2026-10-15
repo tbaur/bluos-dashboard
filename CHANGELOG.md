@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.2](https://github.com/tbaur/bluos-dashboard/compare/v2.1.1...v2.1.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* keep muted rooms muted when group volume changes ([#128](https://github.com/tbaur/bluos-dashboard/issues/128)) ([cb7766a](https://github.com/tbaur/bluos-dashboard/commit/cb7766a871566569d0710406c94f1840f4b8d7c9))
+
 ## [2.1.1](https://github.com/tbaur/bluos-dashboard/compare/v2.1.0...v2.1.1) (2026-10-10)
 
 
