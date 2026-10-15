@@ -75,6 +75,7 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
   const latestLevel = useRef(device?.volume ?? 0);
   const senderRef = useRef<LatestValueSender<number> | null>(null);
   const draggingRef = useRef(false);
+  const movedRef = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
 
@@ -131,7 +132,9 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
       window.clearTimeout(commitTimer.current);
       commitTimer.current = undefined;
     }
-    flushVolume(latestLevel.current);
+    // A tap on a muted row would otherwise unmute it at 0 and lose its unmute level.
+    if (movedRef.current) flushVolume(latestLevel.current);
+    else setDragVolume(null);
   };
 
   const onMuteClick = () => void toggleMute(device.id);
@@ -264,13 +267,17 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
           aria-valuenow={displayVolume}
           onPointerDown={() => {
             draggingRef.current = true;
+            movedRef.current = false;
             setDragging(true);
             setDragVolume(device.volume);
             holdVolume(device.id, DRAG_VOLUME_HOLD_MS);
           }}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-          onChange={(e) => onVolumeInput(Number(e.target.value))}
+          onChange={(e) => {
+            movedRef.current = true;
+            onVolumeInput(Number(e.target.value));
+          }}
         />
         <span className="volume-value">{displayVolume}</span>
         {volumesLinked ? (

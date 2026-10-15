@@ -186,6 +186,22 @@ describe('PlayerRow', () => {
     });
   });
 
+  it('leaves a muted room muted when its slider is tapped without moving', async () => {
+    setVolume.mockClear();
+    useFleetStore.setState({ devices: [{ ...zone, volume: 0, muted: true, mute_volume: 50 }] });
+    render(
+      <MemoryRouter>
+        <PlayerRow deviceId={zone.id} />
+      </MemoryRouter>,
+    );
+    const slider = screen.getByLabelText('Volume for Zone One');
+    fireEvent.pointerDown(slider);
+    fireEvent.pointerUp(slider);
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+    expect(setVolume).not.toHaveBeenCalled();
+    expect(useFleetStore.getState().devices[0]).toMatchObject({ muted: true, mute_volume: 50 });
+  });
+
   it('does not mark a NAD C658 as volume-linked with Bluesound rooms', () => {
     const c658: PlayerStatus = {
       ...sample,

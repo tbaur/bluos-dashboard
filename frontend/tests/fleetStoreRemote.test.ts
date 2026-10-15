@@ -177,6 +177,17 @@ describe('fleetStore remote sync', () => {
     });
   });
 
+  it('takes the incoming volume when a room is muted elsewhere during a volume hold', () => {
+    useFleetStore.getState().setFleet([{ ...sample, volume: 48, muted: false }]);
+    useFleetStore.getState().holdVolume('player-1', 10_000);
+    useFleetStore.getState().setFleet([{ ...sample, volume: 0, muted: true, mute_volume: 48 }]);
+    expect(useFleetStore.getState().devices[0]).toMatchObject({
+      muted: true,
+      volume: 0,
+      mute_volume: 48,
+    });
+  });
+
   it('reverts mute-all when the API call fails', async () => {
     useFleetStore.getState().setFleet([{ ...sample, volume: 20, muted: false }]);
     fleetMute.mockRejectedValue(new Error('boom'));

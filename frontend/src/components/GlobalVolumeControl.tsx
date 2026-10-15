@@ -52,19 +52,20 @@ function GroupVolumePanel({
   const holdVolumes = useFleetStore((s) => s.holdVolumes);
   const commitTimer = useRef<number | undefined>(undefined);
   const latestLevel = useRef(0);
-  const deviceIdsRef = useRef<string[]>([]);
+  const audibleIdsRef = useRef<string[]>([]);
   const senderRef = useRef<LatestValueSender<number> | null>(null);
   const draggingRef = useRef(false);
+  const movedRef = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [pending, setPending] = useState(false);
   const [dragDraft, setDragDraft] = useState<number | null>(null);
 
-  const deviceIds = useMemo(() => devices.map((d) => d.id), [devices]);
+  const audible = useMemo(() => audibleDevices(devices), [devices]);
+  // The backend also skips muted rooms, but its cache can lag a Mute click just made here.
   useEffect(() => {
-    deviceIdsRef.current = deviceIds;
-  }, [deviceIds]);
+    audibleIdsRef.current = audible.map((d) => d.id);
+  }, [audible]);
 
-  const audible = audibleDevices(devices);
   const mutedRooms = devices.filter((d) => d.muted);
   const allMuted = audible.length === 0;
   const fleetMedian = medianVolume(audible.map((d) => d.volume));
@@ -80,7 +81,7 @@ function GroupVolumePanel({
   useEffect(() => {
     const sender = createLatestValueSender<number>({
       send: (level) => {
-        const ids = deviceIdsRef.current.slice();
+        const ids = audibleIdsRef.current.slice();
         holdVolumes(ids, DRAG_VOLUME_HOLD_MS);
         return setFleetVolume(level, ids);
       },
@@ -98,16 +99,16 @@ function GroupVolumePanel({
   }, [holdVolumes, setFleetVolume]);
 
   const flush = (level: number) => {
-    if (deviceIdsRef.current.length === 0) return;
+    if (audibleIdsRef.current.length === 0) return;
     setPending(true);
-    holdVolumes(deviceIdsRef.current, DRAG_VOLUME_HOLD_MS);
+    holdVolumes(audibleIdsRef.current, DRAG_VOLUME_HOLD_MS);
     senderRef.current?.push(level);
   };
 
   const scheduleFlush = (level: number) => {
     latestLevel.current = level;
     setDragDraft(level);
-    holdVolumes(deviceIdsRef.current, DRAG_VOLUME_HOLD_MS);
+    holdVolumes(audibleIdsRef.current, DRAG_VOLUME_HOLD_MS);
     if (commitTimer.current) window.clearTimeout(commitTimer.current);
     commitTimer.current = window.setTimeout(() => {
       commitTimer.current = undefined;
@@ -123,7 +124,9 @@ function GroupVolumePanel({
       window.clearTimeout(commitTimer.current);
       commitTimer.current = undefined;
     }
-    flush(latestLevel.current);
+    // A tap without movement must not level every room to the median.
+    if (movedRef.current) flush(latestLevel.current);
+    else setDragDraft(null);
   };
 
   if (devices.length === 0) return null;
@@ -187,14 +190,18 @@ function GroupVolumePanel({
           aria-label={ariaLabel}
           onPointerDown={() => {
             draggingRef.current = true;
+            movedRef.current = false;
             setDragging(true);
             setDragDraft(fleetMedian);
             latestLevel.current = fleetMedian;
-            holdVolumes(deviceIdsRef.current, DRAG_VOLUME_HOLD_MS);
+            holdVolumes(audibleIdsRef.current, DRAG_VOLUME_HOLD_MS);
           }}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-          onChange={(e) => scheduleFlush(Number(e.target.value))}
+          onChange={(e) => {
+            movedRef.current = true;
+            scheduleFlush(Number(e.target.value));
+          }}
         />
         <span className="global-volume-value" title={`${display}%`}>
           {display}

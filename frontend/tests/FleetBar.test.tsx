@@ -371,7 +371,7 @@ describe('FleetBar house remote art', () => {
       vi.useRealTimers();
     });
 
-    function setup() {
+    function setup(extra: PlayerStatus[] = []) {
       const setFleetVolume = vi.fn<(level: number, deviceIds?: string[]) => Promise<void>>(
         () => new Promise<void>((resolve) => window.setTimeout(resolve, 30)),
       );
@@ -379,6 +379,7 @@ describe('FleetBar house remote art', () => {
         devices: [
           player({ id: '1', name: 'Zone One', ...ciS2, volume: 40 }),
           player({ id: '2', name: 'Zone Two', ...ciS2, volume: 40 }),
+          ...extra,
         ],
         sync: null,
         setFleetVolume,
@@ -396,6 +397,28 @@ describe('FleetBar house remote art', () => {
       await vi.advanceTimersByTimeAsync(500);
       expect(setFleetVolume).toHaveBeenCalledTimes(1);
       expect(setFleetVolume).toHaveBeenCalledWith(45, ['1', '2']);
+    });
+
+    it('leaves muted rooms out of the write it sends', async () => {
+      const { setFleetVolume, slider } = setup([
+        player({ id: '3', name: 'Zone Three', ...ciS2, volume: 0, muted: true, mute_volume: 50 }),
+      ]);
+      fireEvent.pointerDown(slider);
+      fireEvent.change(slider, { target: { value: '45' } });
+      fireEvent.pointerUp(slider);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(setFleetVolume).toHaveBeenCalledWith(45, ['1', '2']);
+    });
+
+    it('sends nothing when the slider is tapped without moving', async () => {
+      const { setFleetVolume, slider } = setup([
+        player({ id: '3', name: 'Zone Three', ...ciS2, volume: 30 }),
+      ]);
+      fireEvent.pointerDown(slider);
+      fireEvent.pointerUp(slider);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(setFleetVolume).not.toHaveBeenCalled();
+      expect(slider).toHaveValue('40');
     });
 
     it('keeps the dragged level when an earlier write finishes mid-drag', async () => {

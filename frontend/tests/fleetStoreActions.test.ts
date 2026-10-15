@@ -1,6 +1,8 @@
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlayerStatus } from '@/api/types';
 import { ApiError } from '@/api/types';
+import { useDeviceVolumeCommit } from '@/hooks/usePlayerDetails';
 import { LIVE_HOUSE_SESSION } from '@/lib/houseSession';
 import { useFleetStore } from '@/store/fleetStore';
 
@@ -12,9 +14,11 @@ const setFleetVolume = vi.fn();
 const setMute = vi.fn();
 const fleetMute = vi.fn();
 const fleetReboot = vi.fn();
+const setVolume = vi.fn();
 
 vi.mock('@/api/client', () => ({
   api: {
+    setVolume: (...args: unknown[]) => setVolume(...args),
     listDevices: (...args: unknown[]) => listDevices(...args),
     refreshDevices: (...args: unknown[]) => refreshDevices(...args),
     getSync: (...args: unknown[]) => getSync(...args),
@@ -212,6 +216,41 @@ describe('toggleMute', () => {
   it('does nothing for an unknown player', async () => {
     await store().toggleMute('missing');
     expect(setMute).not.toHaveBeenCalled();
+  });
+});
+
+describe('control', () => {
+  it('restores the given rollback state when the caller painted the change first', async () => {
+    store().setFleet([{ ...base, muted: true, volume: 0, mute_volume: 45 }]);
+    const unmuted = { muted: false, volume: 40, mute_volume: null };
+    store().patchDevice('player-1', unmuted);
+
+    await store().control(
+      'player-1',
+      () => Promise.reject(apiError('Volume failed')),
+      unmuted,
+      { muted: true, volume: 0, mute_volume: 45 },
+    );
+
+    expect(device('player-1')).toMatchObject({ muted: true, volume: 0, mute_volume: 45 });
+  });
+
+  it('puts a muted room back when a detail-page slider unmute fails', async () => {
+    store().setFleet([{ ...base, muted: true, volume: 0, mute_volume: 45 }]);
+    setVolume.mockRejectedValue(apiError('Volume failed'));
+    const { result } = renderHook(() => useDeviceVolumeCommit('player-1'));
+
+    act(() => {
+      result.current(38);
+      result.current(40);
+    });
+    expect(device('player-1')).toMatchObject({ muted: false, volume: 40 });
+
+    await waitFor(() => expect(setVolume).toHaveBeenCalledWith('player-1', 40));
+    await waitFor(() =>
+      expect(device('player-1')).toMatchObject({ muted: true, volume: 0, mute_volume: 45 }),
+    );
+    expect(setVolume).toHaveBeenCalledTimes(1);
   });
 });
 

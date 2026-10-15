@@ -4,6 +4,7 @@ import type {
   AudioInput,
   BluetoothResponse,
   DiagnoseResponse,
+  PlayerStatus,
   Preset,
   QueueResponse,
   UpgradeStatus,
@@ -150,6 +151,7 @@ export function useDeviceVolumeCommit(deviceId: string | undefined) {
   const control = useFleetStore((s) => s.control);
   const patchDevice = useFleetStore((s) => s.patchDevice);
   const timer = useRef<number | undefined>(undefined);
+  const beforeBurst = useRef<Partial<PlayerStatus> | undefined>(undefined);
 
   useEffect(
     () => () => {
@@ -161,14 +163,24 @@ export function useDeviceVolumeCommit(deviceId: string | undefined) {
   return (level: number) => {
     if (!deviceId) return;
     const store = useFleetStore.getState();
-    const patch = ownVolumePatch(store.devices.find((d) => d.id === deviceId), level);
+    const current = store.devices.find((d) => d.id === deviceId);
+    if (!beforeBurst.current && current) {
+      beforeBurst.current = {
+        volume: current.volume,
+        muted: current.muted,
+        mute_volume: current.mute_volume,
+      };
+    }
+    const patch = ownVolumePatch(current, level);
     store.holdVolume(deviceId);
     if (patch.muted !== undefined) store.holdMute(deviceId);
     patchDevice(deviceId, patch);
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       timer.current = undefined;
-      void control(deviceId, () => api.setVolume(deviceId, level), patch);
+      const rollback = beforeBurst.current;
+      beforeBurst.current = undefined;
+      void control(deviceId, () => api.setVolume(deviceId, level), patch, rollback);
     }, VOLUME_COMMIT_MS);
   };
 }

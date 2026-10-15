@@ -91,10 +91,16 @@ interface FleetState {
   fleetPauseAll: () => Promise<void>;
   fleetStopAll: () => Promise<void>;
   fleetRebootAll: () => Promise<void>;
+  /**
+   * Run `action` with an optimistic patch, restoring on failure. Pass `rollback`
+   * when the caller painted the change before calling, so the row's current state
+   * is no longer the state to restore.
+   */
   control: (
     deviceId: string,
     action: () => Promise<void>,
     optimistic?: Partial<PlayerStatus>,
+    rollback?: Partial<PlayerStatus>,
   ) => Promise<void>;
 }
 
@@ -191,7 +197,8 @@ function mergeRemoteDevice(
       volume: previous.volume,
       mute_volume: previous.mute_volume,
     };
-  } else if (holdVolume) {
+  } else if (holdVolume && incoming.muted === previous.muted) {
+    // A mute change made elsewhere (BluOS app, remote) comes with its own volume.
     next = { ...next, volume: previous.volume };
   }
   if ((holds.playbackHoldUntil[incoming.id] ?? 0) > holds.now) {
@@ -692,10 +699,10 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     }
   },
 
-  control: async (deviceId, action, optimistic) => {
+  control: async (deviceId, action, optimistic, rollback) => {
     const epoch = (controlEpoch.get(deviceId) ?? 0) + 1;
     controlEpoch.set(deviceId, epoch);
-    const previous = get().devices.find((d) => d.id === deviceId);
+    const previous = rollback ?? get().devices.find((d) => d.id === deviceId);
     const volumeOnly = isVolumeOnlyPatch(optimistic);
     const mutePatch = isMutePatch(optimistic);
     if (optimistic?.state !== undefined && isEstablishedPlayback(optimistic.state)) {
