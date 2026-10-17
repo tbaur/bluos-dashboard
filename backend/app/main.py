@@ -308,24 +308,28 @@ def create_app() -> FastAPI:
         if assets.is_dir():
             app.mount("/assets", StaticFiles(directory=assets), name="assets")
 
-        def _icon_file(name: str) -> FileResponse | JSONResponse:
-            # `name` is a fixed icon filename. The request path must not choose it.
-            icon = static_dir / name
-            if icon.is_file():
-                return FileResponse(icon)
+        def _public_file(name: str, media_type: str | None = None) -> FileResponse | JSONResponse:
+            # `name` is a fixed public filename. The request path must not choose it.
+            path = static_dir / name
+            if path.is_file():
+                return FileResponse(path, media_type=media_type)
             return JSONResponse(status_code=404, content={"error": "not_found"})
 
         @app.get("/favicon.ico", include_in_schema=False, response_model=None)
         async def favicon_ico() -> FileResponse | JSONResponse:
-            return _icon_file("favicon.ico")
+            return _public_file("favicon.ico")
 
         @app.get("/favicon.svg", include_in_schema=False, response_model=None)
         async def favicon_svg() -> FileResponse | JSONResponse:
-            return _icon_file("favicon.svg")
+            return _public_file("favicon.svg")
 
         @app.get("/apple-touch-icon.png", include_in_schema=False, response_model=None)
         async def apple_touch_icon() -> FileResponse | JSONResponse:
-            return _icon_file("apple-touch-icon.png")
+            return _public_file("apple-touch-icon.png")
+
+        @app.get("/manifest.webmanifest", include_in_schema=False, response_model=None)
+        async def web_manifest() -> FileResponse | JSONResponse:
+            return _public_file("manifest.webmanifest", media_type="application/manifest+json")
 
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str):

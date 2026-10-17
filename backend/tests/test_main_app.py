@@ -80,6 +80,14 @@ async def test_lifespan_starts_and_stops(
             missing_icon = await http.get("/apple-touch-icon.png")
             assert missing_icon.status_code == 404
             assert missing_icon.json()["error"] == "not_found"
+            missing_manifest = await http.get("/manifest.webmanifest")
+            assert missing_manifest.status_code == 404
+            manifest_file = Path(settings.static_dir) / "manifest.webmanifest"
+            manifest_file.write_text('{"name": "test"}', encoding="utf-8")
+            manifest = await http.get("/manifest.webmanifest")
+            assert manifest.status_code == 200
+            assert manifest.headers["content-type"].startswith("application/manifest+json")
+            assert manifest.json() == {"name": "test"}
             docs = await http.get("/api/docs")
             assert docs.status_code == 200
             assert docs.headers["content-security-policy"] == _SWAGGER_CSP

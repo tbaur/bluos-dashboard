@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { api } from '@/api/client';
 import type { PlayerStatus } from '@/api/types';
+import { AppMenu } from '@/components/AppMenu';
 import { AdvancedPanel } from '@/components/player/AdvancedPanel';
 import { DeviceMetricsPanel } from '@/components/player/DeviceMetricsPanel';
 import { NowPlayingPanel } from '@/components/player/NowPlayingPanel';
@@ -138,6 +139,7 @@ function PlayerHeader({ device, role }: { device: PlayerStatus; role: string }) 
           </span>
         )}
       </div>
+      <AppMenu />
     </header>
   );
 }

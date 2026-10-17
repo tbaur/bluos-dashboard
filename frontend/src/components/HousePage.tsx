@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { api } from '@/api/client';
 import type { FleetUpgradeResponse, UpgradeStatus } from '@/api/types';
 import { ApiError } from '@/api/types';
+import { AppMenu } from '@/components/AppMenu';
 import { FleetHealthLog } from '@/components/FleetHealthLog';
 import { HouseRemote } from '@/components/HouseRemote';
 import { compareFirmware } from '@/lib/firmware';
@@ -114,6 +115,7 @@ export function HousePage() {
             {devices.length} device{devices.length === 1 ? '' : 's'}
           </span>
         </div>
+        <AppMenu />
       </header>
 
       {toast ? (

@@ -269,8 +269,3 @@ export function FleetBar() {
     </div>
   );
 }
-
-/** @deprecated Use FleetBar — kept name for any lingering imports */
-export function GlobalVolumeControl() {
-  return <FleetBar />;
-}

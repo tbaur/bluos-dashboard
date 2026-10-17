@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { AppMenu } from '@/components/AppMenu';
 import { FleetBar } from '@/components/GlobalVolumeControl';
 import { PlayerRow } from '@/components/PlayerCard';
 import { StatusPills } from '@/components/StatusPills';
@@ -58,12 +59,13 @@ export function FleetPage() {
           />
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn btn-primary header-rescan"
             disabled={refreshing}
             onClick={() => void refresh()}
           >
             {refreshing ? 'Scanning…' : 'Rescan network'}
           </button>
+          <AppMenu />
         </div>
       </header>
 

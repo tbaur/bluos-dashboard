@@ -1,0 +1,14 @@
+{
+  "name": "BluOS Dashboard",
+  "short_name": "BluOS",
+  "description": "LAN control plane for BluOS players on your network",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0c1014",
+  "theme_color": "#0c1014",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

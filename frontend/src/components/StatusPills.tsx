@@ -1,3 +1,4 @@
+import { discoveryLabel, playerCountLabel } from '@/lib/discovery';
 import type { ConnectionState } from '@/store/fleetStore';
 
 const CONNECTION_LABEL: Record<ConnectionState, string> = {
@@ -5,13 +6,6 @@ const CONNECTION_LABEL: Record<ConnectionState, string> = {
   connecting: 'Connecting…',
   reconnecting: 'Reconnecting…',
   offline: 'Offline',
-};
-
-const DISCOVERY_LABEL: Record<string, string> = {
-  both: 'mDNS + LSDP',
-  mdns: 'mDNS',
-  lsdp: 'LSDP',
-  'mdns+lsdp': 'mDNS + LSDP',
 };
 
 interface StatusPillsProps {
@@ -27,12 +21,8 @@ export function StatusPills({
   discoveryMethod,
   loading,
 }: StatusPillsProps) {
-  const discovery = DISCOVERY_LABEL[discoveryMethod] ?? discoveryMethod;
-  const playersLabel = loading
-    ? 'Scanning…'
-    : deviceCount === 1
-      ? '1 player'
-      : `${deviceCount} players`;
+  const discovery = discoveryLabel(discoveryMethod);
+  const playersLabel = loading ? 'Scanning…' : playerCountLabel(deviceCount);
 
   return (
     <div className="status-pills" role="status" aria-live="polite">
@@ -42,7 +32,7 @@ export function StatusPills({
         title="Realtime connection to the dashboard backend"
       >
         <span className="pill-dot" aria-hidden="true" />
-        {CONNECTION_LABEL[connection]}
+        <span className="pill-label">{CONNECTION_LABEL[connection]}</span>
       </span>
       <span
         className="pill pill-fleet"
