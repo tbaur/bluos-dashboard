@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.0](https://github.com/tbaur/bluos-dashboard/compare/v2.1.3...v2.2.0) (2026-10-17)
+
+
+### Features
+
+* make the dashboard work well on phones and iPads ([8fff8a8](https://github.com/tbaur/bluos-dashboard/commit/8fff8a8fed9f1ada07b5136262e92a78b1b993c3))
+
 ## [2.1.3](https://github.com/tbaur/bluos-dashboard/compare/v2.1.2...v2.1.3) (2026-10-15)
 
 

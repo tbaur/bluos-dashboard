@@ -1,3 +1,3 @@
 """BluOS Dashboard — FastAPI + React LAN control plane."""
 
-__version__ = "2.1.3"  # x-release-please-version
+__version__ = "2.2.0"  # x-release-please-version
