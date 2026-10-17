@@ -161,10 +161,21 @@ describe('PlayerRow', () => {
       </MemoryRouter>,
     );
     expect(screen.getByLabelText('Volume for Zone One')).toHaveValue('0');
-    expect(screen.getByRole('button', { name: 'Unmute' })).toHaveAttribute(
-      'title',
-      'Unmute (returns to 50)',
+    const unmute = screen.getByRole('button', { name: 'Unmute' });
+    expect(unmute).toHaveAttribute('title', 'Unmute (returns to 50)');
+    expect(unmute).toHaveAttribute('data-muted', 'true');
+  });
+
+  it('keeps text names on icon buttons so room cards stay labelled', () => {
+    render(
+      <MemoryRouter>
+        <PlayerRow deviceId={sample.id} />
+      </MemoryRouter>,
     );
+    for (const name of ['Prev', 'Pause', 'Stop', 'Next', 'Mute']) {
+      const button = screen.getByRole('button', { name });
+      expect(button.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    }
   });
 
   it("unmutes a muted room when its own slider moves, as BluOS does", async () => {

@@ -29,7 +29,14 @@ body,
   min-height: 100%;
 }
 
+html {
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
+  -webkit-tap-highlight-color: transparent;
   font-family: var(--font-body);
   background:
     radial-gradient(1200px 600px at 10% -10%, rgba(61, 156, 240, 0.16), transparent 55%),
@@ -1447,25 +1454,165 @@ button.volume-linked-pill-action:disabled {
   }
 }
 
+/* Desktop rows show text labels; room cards (below) show the icons instead. */
+.fleet-btn svg {
+  display: none;
+}
+
+/* Room cards: the same row markup, stacked as name, now playing, then volume and controls. */
 @media (max-width: 900px) {
   .fleet-table {
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    background: none;
+    box-shadow: none;
   }
 
-  .fleet-row,
+  .fleet-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "player player"
+      "playing playing"
+      "volume transport";
+    align-items: center;
+    gap: 6px 12px;
+    min-height: 0;
+    padding: 14px 14px 12px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
   .fleet-row-head {
-    min-width: 960px;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "player";
+    padding: 2px 4px;
+    border: 0;
+    background: none;
+  }
+
+  .fleet-row-head > .fleet-cell:not(:first-child) {
+    display: none;
+  }
+
+  .fleet-cell-player {
+    grid-area: player;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    padding: 0;
+  }
+
+  .fleet-player-line {
+    align-items: center;
+  }
+
+  .fleet-player-name {
+    font-size: 1.02rem;
+  }
+
+  .fleet-player-hardware,
+  .fleet-player-ip {
+    display: none;
+  }
+
+  .fleet-player-meta {
+    padding-left: 0;
+  }
+
+  .fleet-cell-playing {
+    grid-area: playing;
+    padding-left: 18px;
+  }
+
+  .fleet-track {
+    font-size: 0.92rem;
+  }
+
+  .fleet-subtitle {
+    font-size: 0.8rem;
+  }
+
+  .fleet-cell-volume {
+    grid-area: volume;
+    width: auto;
+    padding-left: 18px;
+  }
+
+  .fleet-cell-volume input[type="range"] {
+    min-height: 32px;
+  }
+
+  .fleet-cell-volume .volume-linked {
+    display: none;
+  }
+
+  /* Room for mute plus play, so every card's slider ends at the same x. */
+  .fleet-cell-transport {
+    grid-area: transport;
+    width: 96px;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .fleet-synced-hint {
+    width: auto;
+  }
+
+  .fleet-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    min-width: 0;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .fleet-btn svg {
+    display: block;
+    width: 20px;
+    height: 20px;
+  }
+
+  /* Track skip and stop live on the player page; cards keep play/pause and mute. */
+  .fleet-btn[data-action="prev"],
+  .fleet-btn[data-action="stop"],
+  .fleet-btn[data-action="next"] {
+    display: none;
+  }
+
+  .fleet-btn[data-action="mute"] {
+    order: -1;
+  }
+
+  .fleet-btn[data-action="mute"][data-muted="true"] {
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+  }
+
+  .fleet-btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
-.section {
-  margin-top: 36px;
-}
-
-.section h2 {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  margin: 0 0 12px;
+@media (min-width: 600px) and (max-width: 900px) {
+  .fleet-table {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .sync-strip {
@@ -1725,12 +1872,6 @@ button.sync-chip-primary {
   z-index: 50;
   max-width: 420px;
   border-color: rgba(224, 168, 74, 0.45);
-}
-
-.detail-layout {
-  display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: 20px;
 }
 
 .dossier {
@@ -2220,14 +2361,308 @@ button.sync-chip-primary {
   padding: 12px 14px;
 }
 
-@media (max-width: 860px) {
+/* Top-right page menu. Wide layouts keep these controls in the header instead. */
+.app-menu {
+  display: none;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.app-menu-btn {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--chrome);
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.app-menu-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.app-menu-btn[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--chrome));
+}
+
+.app-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: min(280px, calc(100vw - 28px));
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: #1b2330;
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.55);
+}
+
+.app-menu-links {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-menu-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.app-menu-link:hover,
+.app-menu-link:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-menu-link[aria-current="page"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.app-menu-scan {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 10px 4px 4px;
+  border-top: 1px solid var(--border);
+}
+
+.app-menu-scan .btn {
+  width: 100%;
+  min-height: 44px;
+}
+
+.app-menu-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+/* Tablets and phones: one header row, without the tagline and discovery detail. */
+@media (max-width: 900px) {
   .app-header {
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
   }
 
-  .detail-layout {
-    grid-template-columns: 1fr;
+  .app-header .brand-sub,
+  .app-header .pill-muted {
+    display: none;
+  }
+}
+
+/* Portrait tablets have room for larger artwork than phones. */
+@media (min-width: 721px) and (max-width: 860px) {
+  .house-remote {
+    --house-art-size: 132px;
+  }
+}
+
+/* Touch screens get finger-sized targets at every width, including the desktop table on a landscape iPad. */
+@media (pointer: coarse) {
+  .btn-compact,
+  .header-actions > .btn,
+  .volume-nudge-btn {
+    min-height: 44px;
+  }
+
+  .volume-level-chip,
+  .sync-chip {
+    min-height: 36px;
+  }
+
+  .fleet-sort-btn {
+    min-height: 32px;
+    align-items: center;
+  }
+
+  .house-remote-stack-fleet[data-also="true"] .house-icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .house-remote-stack-fleet[data-also="true"] .house-icon-btn-play {
+    width: 52px;
+    height: 52px;
+  }
+
+  .fleet-cell-volume input[type="range"],
+  .global-volume-row input[type="range"] {
+    min-height: 36px;
+  }
+}
+
+/* A shortcut legend means nothing without a keyboard. */
+@media (hover: none) and (pointer: coarse) {
+  .house-remote-keys,
+  .house-remote-stack-fleet[data-also="true"] .house-remote-keys {
+    display: none;
+  }
+}
+
+/* Phones: safe-area padding, a slim sticky header, and full-width touch controls. */
+@media (max-width: 720px) {
+  .app-shell {
+    --shell-pad-top: calc(env(safe-area-inset-top) + 14px);
+    --shell-pad-left: max(14px, env(safe-area-inset-left));
+    --shell-pad-right: max(14px, env(safe-area-inset-right));
+    padding: var(--shell-pad-top) var(--shell-pad-right) calc(env(safe-area-inset-bottom) + 40px)
+      var(--shell-pad-left);
+  }
+
+  .app-menu {
+    display: block;
+  }
+
+  .app-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    margin: calc(-1 * var(--shell-pad-top)) calc(-1 * var(--shell-pad-right)) 16px
+      calc(-1 * var(--shell-pad-left));
+    padding: calc(env(safe-area-inset-top) + 10px) var(--shell-pad-right) 10px var(--shell-pad-left);
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+  }
+
+  .app-header .brand {
+    font-size: 1.6rem;
+  }
+
+  .header-rescan {
+    display: none;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+
+  .app-header .status-pills {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .app-header .pill {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  /* Live is the normal state, so it shrinks to its dot; problems keep their words. */
+  .app-header .pill-connection[data-state="live"] {
+    padding: 6px 9px;
+  }
+
+  .app-header .pill-connection[data-state="live"] .pill-label,
+  .global-volume-row label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .dossier-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px 12px;
+    margin-bottom: 18px;
+  }
+
+  .dossier-header > .app-menu {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .dossier-header-badges {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .dossier-header > div:first-child > a.card-meta {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+  }
+
+  .house-room-list a {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .fleet-bar {
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .house-remote {
+    padding: 16px 16px 14px;
+    gap: 14px;
+  }
+
+  .house-remote-primary {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+  }
+
+  .house-remote-transport {
+    gap: 10px;
+  }
+
+  .house-remote-actions .btn {
+    min-height: 44px;
+  }
+
+  /* Stacked panels size to their content; the desktop rail splits a fixed height. */
+  .fleet-bar-rail .fleet-bar-panel {
+    flex: 0 0 auto;
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .volume-nudge-btn {
+    min-width: 44px;
+  }
+
+  .volume-level-chips {
+    flex-wrap: nowrap;
+  }
+
+  .volume-level-chip {
+    flex: 1 1 0;
+    font-size: 0.85rem;
+  }
+
+  .toast {
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    max-width: none;
   }
 }
 

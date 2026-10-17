@@ -30,6 +30,48 @@ export function IconPause() {
   );
 }
 
+export function IconStop() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 6h12v12H6V6z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function IconSpeaker({ muted }: { muted: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor" />
+      {muted ? (
+        <path
+          d="m16 9.4 1.4-1.4 2.1 2.1 2.1-2.1 1.4 1.4-2.1 2.1 2.1 2.1-1.4 1.4-2.1-2.1-2.1 2.1-1.4-1.4 2.1-2.1L16 9.4z"
+          fill="currentColor"
+        />
+      ) : (
+        <path
+          d="M15.5 8.5a5 5 0 0 1 0 7l-1.4-1.4a3 3 0 0 0 0-4.2l1.4-1.4zm2.8-2.8a9 9 0 0 1 0 12.6l-1.4-1.4a7 7 0 0 0 0-9.8l1.4-1.4z"
+          fill="currentColor"
+        />
+      )}
+    </svg>
+  );
+}
+
+export function IconMenu({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      {open ? (
+        <path
+          d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5z"
+          fill="currentColor"
+        />
+      ) : (
+        <path d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z" fill="currentColor" />
+      )}
+    </svg>
+  );
+}
+
 export function IconShuffle() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">

@@ -1,6 +1,14 @@
 import { Link } from 'react-router';
 import { api } from '@/api/client';
 import type { PlayerStatus } from '@/api/types';
+import {
+  IconNext,
+  IconPause,
+  IconPlay,
+  IconPrev,
+  IconSpeaker,
+  IconStop,
+} from '@/components/house/HouseIcons';
 import { volumePeerGroup } from '@/lib/deviceGroups';
 import {
   deviceEndpoint,
@@ -62,7 +70,10 @@ function followedName(devices: PlayerStatus[], deviceId: string, sync: ReturnTyp
   return primaryNameFor({ ...me, sync_role: role }, devices);
 }
 
-/** Compact fixed-column fleet row — keeps controls aligned across players. */
+/**
+ * Compact fixed-column fleet row — keeps controls aligned across players.
+ * Below the tablet breakpoint the same markup is laid out as a room card.
+ */
 export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: string }) {
   const device = useFleetStore((s) => s.devices.find((d) => d.id === deviceId));
   const sync = useFleetStore((s) => s.sync);
@@ -141,11 +152,14 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
   const muteButton = (
     <button
       type="button"
-      className="btn btn-compact btn-mute"
+      className="btn btn-compact btn-mute fleet-btn"
+      data-action="mute"
+      data-muted={device.muted ? 'true' : 'false'}
       title={unmuteTitle(device)}
       onClick={onMuteClick}
     >
-      {device.muted ? 'Unmute' : 'Mute'}
+      <IconSpeaker muted={device.muted} />
+      <span className="fleet-btn-label">{device.muted ? 'Unmute' : 'Mute'}</span>
     </button>
   );
 
@@ -211,14 +225,17 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
           <>
             <button
               type="button"
-              className="btn btn-compact"
+              className="btn btn-compact fleet-btn"
+              data-action="prev"
               onClick={() => void control(device.id, () => api.back(device.id))}
             >
-              Prev
+              <IconPrev />
+              <span className="fleet-btn-label">Prev</span>
             </button>
             <button
               type="button"
-              className="btn btn-compact btn-primary"
+              className="btn btn-compact btn-primary fleet-btn"
+              data-action="play"
               onClick={() =>
                 void control(
                   device.id,
@@ -227,23 +244,28 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
                 )
               }
             >
-              {playing ? 'Pause' : 'Play'}
+              {playing ? <IconPause /> : <IconPlay />}
+              <span className="fleet-btn-label">{playing ? 'Pause' : 'Play'}</span>
             </button>
             <button
               type="button"
-              className="btn btn-compact"
+              className="btn btn-compact fleet-btn"
+              data-action="stop"
               onClick={() =>
                 void control(device.id, () => api.stop(device.id), { state: 'stop' })
               }
             >
-              Stop
+              <IconStop />
+              <span className="fleet-btn-label">Stop</span>
             </button>
             <button
               type="button"
-              className="btn btn-compact"
+              className="btn btn-compact fleet-btn"
+              data-action="next"
               onClick={() => void control(device.id, () => api.skip(device.id))}
             >
-              Next
+              <IconNext />
+              <span className="fleet-btn-label">Next</span>
             </button>
             {muteButton}
           </>
@@ -296,6 +318,3 @@ export const PlayerRow = memo(function PlayerRow({ deviceId }: { deviceId: strin
     </div>
   );
 });
-
-/** @deprecated Prefer PlayerRow — alias for older imports */
-export const PlayerCard = PlayerRow;
