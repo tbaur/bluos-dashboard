@@ -935,24 +935,8 @@ a {
     font-size: 1.2rem;
   }
 
-  .house-remote-deck {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .house-remote-transport {
-    justify-content: center;
-  }
-
-  .house-remote-actions {
-    margin-left: 0;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .house-remote-actions .btn {
-    width: 100%;
-    min-width: 0;
+    min-width: 6.5rem;
   }
 
   .house-remote-stack-fleet[data-art='true'] {
@@ -2498,6 +2482,7 @@ button.sync-chip-primary {
   .btn-compact,
   .header-actions > .btn,
   .volume-nudge-btn,
+  .house-remote-actions .btn,
   .settings-num,
   .settings-text {
     min-height: 44px;
@@ -2652,11 +2637,25 @@ button.sync-chip-primary {
     white-space: normal;
   }
 
+  .house-remote-deck {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .house-remote-transport {
+    justify-content: center;
     gap: 10px;
   }
 
+  .house-remote-actions {
+    margin-left: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .house-remote-actions .btn {
+    width: 100%;
+    min-width: 0;
     min-height: 44px;
   }
 
