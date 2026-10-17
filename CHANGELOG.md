@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.1](https://github.com/tbaur/bluos-dashboard/compare/v2.2.0...v2.2.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ui:** make the player Advanced panel fit phones and tablets ([a5cf096](https://github.com/tbaur/bluos-dashboard/commit/a5cf096c83d547c9f25bb1ac4b59e6722615c73c))
+
 ## [2.2.0](https://github.com/tbaur/bluos-dashboard/compare/v2.1.3...v2.2.0) (2026-10-17)
 
 
