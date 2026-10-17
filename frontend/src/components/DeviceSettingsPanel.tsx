@@ -127,7 +127,7 @@ export function DeviceSettingsPanel({ deviceId }: DeviceSettingsPanelProps) {
         <div className="empty">No settings on this page</div>
       ) : null}
       {!loading && fields.length > 0 ? (
-        <ul className="list">
+        <ul className="list settings-list">
           {fields.map((setting) => {
             const value = values[setting.id] ?? setting.value;
             const draft = drafts[setting.id] ?? value;
