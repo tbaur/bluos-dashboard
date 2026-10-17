@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.2](https://github.com/tbaur/bluos-dashboard/compare/v2.2.1...v2.2.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ui:** keep the house remote on one row on iPad portrait ([e0e772c](https://github.com/tbaur/bluos-dashboard/commit/e0e772cb15ea9686911c5279c644c7459940926d))
+
 ## [2.2.1](https://github.com/tbaur/bluos-dashboard/compare/v2.2.0...v2.2.1) (2026-10-17)
 
 
