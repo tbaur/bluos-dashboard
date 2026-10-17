@@ -2085,7 +2085,26 @@ button.sync-chip-primary {
 
 .dossier-advanced {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
+}
+
+.transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Rows with many options drop their buttons under the label instead of running off the panel. */
+.settings-list li {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.settings-list .queue-move {
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .settings-num {
@@ -2093,7 +2112,7 @@ button.sync-chip-primary {
   padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  background: var(--bg);
   color: var(--text);
   font: inherit;
   font-variant-numeric: tabular-nums;
@@ -2106,7 +2125,7 @@ button.sync-chip-primary {
   padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  background: var(--bg);
   color: var(--text);
   font: inherit;
 }
@@ -2225,6 +2244,7 @@ button.sync-chip-primary {
 
 .queue-move {
   display: inline-flex;
+  align-self: center;
   gap: 6px;
   flex-shrink: 0;
 }
@@ -2477,7 +2497,9 @@ button.sync-chip-primary {
 @media (pointer: coarse) {
   .btn-compact,
   .header-actions > .btn,
-  .volume-nudge-btn {
+  .volume-nudge-btn,
+  .settings-num,
+  .settings-text {
     min-height: 44px;
   }
 
